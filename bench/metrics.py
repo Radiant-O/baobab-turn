@@ -20,15 +20,15 @@ Every latency figure is reported at p50/p90/p95.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Iterable, Sequence
 
 __all__ = [
-    "ScoredTurn",
-    "Percentiles",
     "Metrics",
-    "percentiles",
+    "Percentiles",
+    "ScoredTurn",
     "compute",
+    "percentiles",
 ]
 
 
