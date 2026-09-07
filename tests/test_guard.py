@@ -67,10 +67,10 @@ def test_marker_weight_scales_the_adjustment(index: MarkerIndex) -> None:
     assert 0.75 < weak < strong
 
 
-def test_continuation_beats_yield_when_both_could_match() -> None:
-    """"so ... abi" is contrived, but the precedence must be deliberate:
+def test_continuation_wins_a_tie_at_equal_length() -> None:
+    """When two markers of the same length could match, continuation wins:
     waiting wrongly costs a little latency, interrupting wrongly costs the
-    caller's goodwill. Continuation is checked first."""
+    caller's goodwill."""
     idx = MarkerIndex(
         LanguagePack(
             code="t",
@@ -81,6 +81,44 @@ def test_continuation_beats_yield_when_both_could_match() -> None:
     )
     r = guard(_gi(transcript_tail="abi"), index=idx)
     assert r.p_adjusted is not None and r.p_adjusted < 0.75
+
+
+def test_longer_yield_marker_beats_a_shorter_continuation() -> None:
+    """Regression: "no be so" is an unambiguous hand-off, but its last word
+    "so" is a continuation marker in the same pack.
+
+    Checking continuations first made "no be so" veto the turn -- the exact
+    opposite of what it means. Length is a proxy for specificity, so the more
+    specific marker has to win regardless of which list it came from. This
+    was caught by running the phrases through examples/try_it.py, not by the
+    unit tests, which is why a real one is pinned here.
+    """
+    idx = MarkerIndex(
+        LanguagePack(
+            code="t",
+            name="T",
+            continuation_markers=(Marker("so", 0.6),),
+            yield_markers=(Marker("no be so", 0.9),),
+        )
+    )
+    r = guard(_gi(transcript_tail="no be so"), index=idx)
+    assert r.p_adjusted is not None and r.p_adjusted > 0.75
+    assert r.reasons == ("yield_boost:no be so",)
+
+    # ...and the bare marker still vetoes, so the fix did not simply invert
+    # the precedence.
+    bare = guard(_gi(transcript_tail="i talk am so"), index=idx)
+    assert bare.p_adjusted is not None and bare.p_adjusted < 0.75
+
+
+def test_shipped_pidgin_pack_handles_no_be_so() -> None:
+    """The same regression, against the real pack rather than a fixture."""
+    from baobab_turn import resolve
+
+    pack = resolve("pcm")
+    assert pack is not None
+    r = guard(_gi(transcript_tail="e don finish, no be so"), index=MarkerIndex(pack))
+    assert r.p_adjusted is not None and r.p_adjusted > 0.75
 
 
 def test_ambiguous_marker_only_counts_on_a_final_transcript(index: MarkerIndex) -> None:
