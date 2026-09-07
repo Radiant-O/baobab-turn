@@ -14,6 +14,8 @@ through untouched.
 
 from __future__ import annotations
 
+import math
+
 from .config import BaobabConfig
 from .markers import MarkerIndex
 from .types import NULL_PACK, GuardInput, GuardResult, LanguagePack
@@ -39,8 +41,27 @@ def guard(
     pack: LanguagePack = index.pack if index is not None else NULL_PACK
 
     reasons: list[str] = []
-    p = gi.p_inner
     delay: int | None = None
+
+    # Sanitise the inner probability before any arithmetic touches it.
+    #
+    # NaN is the dangerous one: every comparison against it is False, so it
+    # slips through clamping untouched and we would hand a NaN back to the
+    # framework. An inner detector that produces NaN or infinity is
+    # malfunctioning, and we have no basis to correct a number that isn't one
+    # -- so we treat it as having no opinion at all.
+    #
+    # Out-of-range but finite values are merely wrong, not meaningless, so
+    # they are clamped rather than discarded. Clamping happens here, before
+    # the marker rules, because those rules assume p is a probability: a
+    # yield boost applied to p=5.0 would move it the wrong way.
+    p = gi.p_inner
+    if p is not None:
+        if not math.isfinite(p):
+            reasons.append("p_inner_not_finite")
+            p = None
+        else:
+            p = _clamp(float(p), 0.0, 1.0)
 
     # --- the lexical layer, and when it must keep quiet ----------------
     #
@@ -109,10 +130,24 @@ def guard(
     if config.enable_pacing and gi.mean_pause_ms is not None:
         # A caller who habitually pauses long mid-sentence has earned more
         # patience than one who does not. Rolling mean only; no ML.
-        target = gi.mean_pause_ms + (gi.stdev_pause_ms or 0.0)
-        if target > (delay or config.min_delay_ms):
-            delay = int(target)
-            reasons.append("pacing")
+        #
+        # Both stats are sanitised first. A non-finite value here is not
+        # hypothetical: a variance computed from a single observation, or a
+        # division by a zero sample count, produces inf or nan, and `int(inf)`
+        # raises OverflowError -- which on the LiveKit streaming path would
+        # escape into the SDK's unguarded call site and hang the turn.
+        mean = gi.mean_pause_ms
+        stdev = gi.stdev_pause_ms or 0.0
+        if math.isfinite(mean) and math.isfinite(stdev):
+            # Clamp before int() so the conversion can never overflow.
+            target = _clamp(
+                mean + stdev, float(config.min_delay_ms), float(config.max_delay_ms)
+            )
+            if target > (delay or config.min_delay_ms):
+                delay = int(target)
+                reasons.append("pacing")
+        else:
+            reasons.append("pacing_stats_not_finite")
 
     # --- clamp and decide ----------------------------------------------
     lo = pack.min_delay_ms if pack.min_delay_ms is not None else config.min_delay_ms
