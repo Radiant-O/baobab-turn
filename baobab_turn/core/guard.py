@@ -91,29 +91,45 @@ def guard(
         assert index is not None  # narrowed by tail_usable
         tokens = index.window(gi.transcript_tail or "", config.marker_window)
 
-        # Order matters. A continuation marker is a stronger claim than a
-        # yield marker -- "so..." means the speaker is mid-thought, and we
-        # would rather wait wrongly than interrupt wrongly.
-        cont = index.continuation(tokens)
-        if cont is not None:
-            phrase, weight = cont
-            p *= 1.0 - (config.continuation_veto_strength * weight)
-            reasons.append(f"continuation_veto:{phrase}")
-        else:
-            yielded = index.yields(tokens)
-            if yielded is not None:
-                phrase, weight = yielded
+        # The longest match wins, across all three marker kinds, and only
+        # then does kind break a tie.
+        #
+        # Getting this backwards is subtle and wrong. "no be so" is an
+        # unambiguous hand-off, but its last word "so" is a continuation
+        # marker; checking continuations first would veto the turn on a
+        # phrase that means the exact opposite. Length is a proxy for
+        # specificity, so the more specific marker has to win regardless of
+        # which list it came from.
+        #
+        # At equal length, continuation outranks yield: waiting wrongly costs
+        # a little latency, interrupting wrongly costs the caller's goodwill.
+        #
+        # Ambiguous markers ("sha", trailing "o") only count on a finalised
+        # transcript. Mid-utterance they mean nothing, and treating one as a
+        # hand-off is how a detector cuts someone off.
+        candidates: list[tuple[int, int, str, tuple[str, float]]] = []
+        for rank, (kind, match) in enumerate(
+            (
+                ("continuation", index.continuation(tokens)),
+                ("yield", index.yields(tokens)),
+                ("ambiguous", index.ambiguous(tokens) if gi.is_final else None),
+            )
+        ):
+            if match is not None:
+                candidates.append((len(match[0].split()), rank, kind, match))
+
+        if candidates:
+            candidates.sort(key=lambda c: (-c[0], c[1]))
+            _, _, kind, (phrase, weight) = candidates[0]
+            if kind == "continuation":
+                p *= 1.0 - (config.continuation_veto_strength * weight)
+                reasons.append(f"continuation_veto:{phrase}")
+            elif kind == "yield":
                 p += (1.0 - p) * config.yield_boost_strength * weight
                 reasons.append(f"yield_boost:{phrase}")
             else:
-                amb = index.ambiguous(tokens)
-                # Ambiguous markers only count as the final token of a
-                # finalised transcript. Mid-utterance they mean nothing, and
-                # treating one as a hand-off is how you cut someone off.
-                if amb is not None and gi.is_final:
-                    phrase, weight = amb
-                    p += (1.0 - p) * config.yield_boost_strength * weight * 0.5
-                    reasons.append(f"ambiguous_hint:{phrase}")
+                p += (1.0 - p) * config.yield_boost_strength * weight * 0.5
+                reasons.append(f"ambiguous_hint:{phrase}")
 
     # --- patience ------------------------------------------------------
     # These are delay *intents*. LiveKit cannot honour a millisecond value and
