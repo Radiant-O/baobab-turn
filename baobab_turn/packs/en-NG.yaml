@@ -1,0 +1,76 @@
+# Nigerian English.
+#
+# Marker content is the first draft from SPEC.md 5.2, written by a speaker.
+# It is a hypothesis, not a finding: nothing here has been checked against
+# labelled data, which is why status is `experimental` and labelled_turns is 0.
+# Correct the weights from real transcripts, do not tune them by feel.
+
+code: en-NG
+name: Nigerian English
+region_hint: [NG]
+status: experimental
+maintainer: ""
+
+tonal: false
+tonal_extra_ms: 0
+
+commonly_switches_with: [pcm, yo, ig, ha]
+
+# Speaker has MORE to say. Lowers p(end of turn).
+continuation_markers:
+  - {text: "so", weight: 0.6}
+  - {text: "then", weight: 0.6}
+  - {text: "because", weight: 0.8}
+  - {text: "as in", weight: 0.7}
+  - {text: "and", weight: 0.5}
+  - {text: "but", weight: 0.6}
+  - {text: "if", weight: 0.7}
+  - {text: "when", weight: 0.7}
+  - {text: "you know", weight: 0.5}
+  - {text: "you see", weight: 0.5}
+  - {text: "i mean", weight: 0.6}
+  - {text: "let me talk true", weight: 0.8}
+  # Hesitation sounds. Strong signal that a thought is unfinished.
+  - {text: "erm", weight: 0.8}
+  - {text: "ehm", weight: 0.8}
+  - {text: "ehn", weight: 0.6}
+  - {text: "eh", weight: 0.6}
+  - {text: "hmm", weight: 0.6}
+  - {text: "mmm", weight: 0.6}
+
+# Speaker is DONE and inviting a reply. Raises p(end of turn).
+yield_markers:
+  - {text: "abi", weight: 0.9}
+  - {text: "shey", weight: 0.85}
+  - {text: "no be so", weight: 0.9}
+  - {text: "abi no be so", weight: 0.95}
+  - {text: "you get", weight: 0.85}
+  - {text: "you get me", weight: 0.9}
+  - {text: "you understand", weight: 0.85}
+  - {text: "e clear", weight: 0.85}
+  - {text: "e clear so", weight: 0.85}
+  - {text: "you dey hear me", weight: 0.85}
+  - {text: "you dey follow", weight: 0.85}
+  - {text: "thats all", weight: 0.9}
+  - {text: "okay", weight: 0.5}
+  - {text: "right", weight: 0.5}
+  - {text: "nko", weight: 0.8}
+  - {text: "that one nko", weight: 0.85}
+
+# Position-dependent. Only counted as the final token of a finalised
+# transcript, and weighted weakly even then.
+ambiguous_markers:
+  - {text: "sha", weight: 0.4, note: "terminal only, after VAD silence"}
+  - {text: "o", weight: 0.25, note: "trailing emphatic; can precede continuation"}
+  - {text: "now", weight: 0.2, note: "'come now' -- not the temporal English now"}
+
+fillers: ["erm", "ehm", "ehn", "eh", "hmm", "mmm"]
+
+thresholds:
+  unlikely_threshold: null   # null = inherit the framework default
+  min_delay_ms: null
+  max_delay_ms: null
+
+validation:
+  labelled_turns: 0
+  dataset_note: "no dataset yet -- markers are an untested first draft"
