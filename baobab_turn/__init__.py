@@ -29,17 +29,17 @@ from .packs.registry import available_packs, resolve
 from .version import __version__
 
 __all__ = [
+    "NULL_PACK",
     "BaobabConfig",
     "GuardInput",
     "GuardResult",
     "LanguagePack",
     "Marker",
     "MarkerIndex",
-    "NULL_PACK",
+    "__version__",
     "available_packs",
     "guard",
     "normalise",
     "resolve",
     "tokenise",
-    "__version__",
 ]
