@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-__all__ = ["Marker", "LanguagePack", "GuardInput", "GuardResult"]
+__all__ = ["GuardInput", "GuardResult", "LanguagePack", "Marker"]
 
 
 @dataclass(frozen=True, slots=True)
