@@ -1,0 +1,74 @@
+# Nigerian Pidgin.
+#
+# Marker content is the first draft from SPEC.md 5.2, written by a speaker.
+# Untested against labelled data -- status `experimental`, labelled_turns 0.
+#
+# The long verbal frames here are the highest-value entries in the file:
+# "the thing be say" and "wetin happen be say" announce that a clause is
+# coming, which is information no Western-trained detector has. Their final
+# word ("say") means nothing alone, which is why longest-match-wins matters.
+
+code: pcm
+name: Nigerian Pidgin
+region_hint: [NG]
+status: experimental
+maintainer: ""
+
+tonal: false
+tonal_extra_ms: 0
+
+commonly_switches_with: [en-NG, yo, ig, ha]
+
+continuation_markers:
+  - {text: "the thing be say", weight: 0.9}
+  - {text: "wetin i dey talk be say", weight: 0.95}
+  - {text: "wetin happen be say", weight: 0.95}
+  - {text: "the reason be say", weight: 0.9}
+  - {text: "as e be", weight: 0.8}
+  - {text: "as e dey be", weight: 0.85}
+  - {text: "na because", weight: 0.85}
+  - {text: "make i talk true", weight: 0.8}
+  - {text: "wey", weight: 0.7}
+  - {text: "make", weight: 0.6}
+  - {text: "so", weight: 0.6}
+  - {text: "then", weight: 0.6}
+  - {text: "because", weight: 0.8}
+  - {text: "but", weight: 0.6}
+  - {text: "if", weight: 0.7}
+  - {text: "when", weight: 0.7}
+  - {text: "erm", weight: 0.8}
+  - {text: "ehm", weight: 0.8}
+  - {text: "ehn", weight: 0.6}
+  - {text: "hmm", weight: 0.6}
+
+yield_markers:
+  - {text: "abi", weight: 0.9}
+  - {text: "abi no be so", weight: 0.95}
+  - {text: "no be so", weight: 0.9}
+  - {text: "shey", weight: 0.85}
+  - {text: "you get", weight: 0.85}
+  - {text: "you get me", weight: 0.9}
+  - {text: "you understand", weight: 0.85}
+  - {text: "e clear", weight: 0.85}
+  - {text: "e clear so", weight: 0.85}
+  - {text: "you dey hear me", weight: 0.85}
+  - {text: "you dey follow", weight: 0.85}
+  - {text: "na all", weight: 0.85}
+  - {text: "na so", weight: 0.7}
+  - {text: "nko", weight: 0.8}
+
+ambiguous_markers:
+  - {text: "sha", weight: 0.4, note: "appears mid-utterance and terminally"}
+  - {text: "o", weight: 0.25, note: "'e don finish o' -- usually terminal, never a hard yield"}
+  - {text: "now", weight: 0.2, note: "'come now' -- not temporal"}
+
+fillers: ["erm", "ehm", "ehn", "eh", "hmm", "mmm", "ehen"]
+
+thresholds:
+  unlikely_threshold: null
+  min_delay_ms: null
+  max_delay_ms: null
+
+validation:
+  labelled_turns: 0
+  dataset_note: "no dataset yet -- markers are an untested first draft"

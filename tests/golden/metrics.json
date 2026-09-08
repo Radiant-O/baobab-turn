@@ -1,0 +1,19 @@
+{
+  "n_turns": 6,
+  "premature_commit_rate": 0.3333333333333333,
+  "late_commit_delay_ms": {
+    "p50": 200.0,
+    "p90": 1770.0000000000005,
+    "p95": 2084.999999999999
+  },
+  "fcr": null,
+  "late_response_delay_ms": null,
+  "tail_abstention_rate": 0.16666666666666666,
+  "reason_counts": {
+    "codeswitch_hold": 1,
+    "continuation_veto": 2,
+    "tail_stale": 1,
+    "tonal_extra": 1,
+    "yield_boost": 1
+  }
+}
