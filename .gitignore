@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+.env
+.DS_Store
+
+# NEVER commit raw caller audio (SPEC §8.4). Manifests and metrics only.
+bench/datasets/audio/
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+
+# Benchmark run artifacts
+bench/out/
+*.jsonl

@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "baobab-turn"
+dynamic = ["version"]
+description = "Turn detection for African speech. Framework-agnostic core, thin adapters, contributable language packs."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+keywords = ["turn-detection", "voice-agents", "african-languages", "livekit", "pipecat", "speech"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+# core/ has exactly one runtime dependency: YAML, for loading language packs.
+# Anything framework-shaped belongs in an optional extra. See SPEC 3.1.
+dependencies = ["pyyaml>=6.0"]
+
+[project.optional-dependencies]
+livekit = ["livekit-agents>=1.6.1", "livekit-plugins-silero"]
+pipecat = ["pipecat-ai"]
+all = ["baobab-turn[livekit,pipecat]"]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.24",
+  "pytest-cov",
+  "ruff",
+]
+
+[project.urls]
+Homepage = "https://github.com/Radiant-O/baobab-turn"
+Repository = "https://github.com/Radiant-O/baobab-turn"
+
+[tool.hatch.version]
+path = "baobab_turn/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["baobab_turn"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"baobab_turn/packs" = "baobab_turn/packs"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
