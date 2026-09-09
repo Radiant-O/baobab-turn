@@ -57,3 +57,15 @@ addopts = "-q"
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+# Pinned explicitly so CI does not drift when ruff changes its defaults or
+# when a contributor has a global config.
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests deliberately contain hostile literals -- zero-width spaces, control
+# characters, full-width forms -- as fixture data. Escaping them would hide
+# what is being tested.
+"tests/test_failopen.py" = ["RUF001", "PLE2515"]
+"tests/test_markers.py" = ["RUF001"]
