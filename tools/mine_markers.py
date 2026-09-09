@@ -61,6 +61,18 @@ import sys
 
 SPEAKER_RE = re.compile(r"^# speaker_id = (\S+)", re.MULTILINE)
 
+#: Dependency relations that mark a token as a discourse-level element.
+#:
+#: `discourse` alone is not enough, and getting this wrong silently drops the
+#: most interesting class. UD uses `discourse` for markers and fillers, but
+#: SUD -- which is what the Naija and Hausa treebanks are natively annotated
+#: in -- puts *emphatic and terminal particles* under `mod:emph` instead. The
+#: trailing `o` in "for dis Nigeria o //" is `PART` / `mod:emph`, not
+#: `discourse`. Filtering on `discourse` only under-counted exactly the
+#: ambiguous trailing-particle class the packs care most about: 8,459
+#: `discourse` versus 3,524 `mod:emph` in SUD Naija.
+MARKER_RELS = ("discourse", "mod:emph")
+
 
 class Utterance:
     __slots__ = ("discourse", "speaker", "words")
@@ -101,7 +113,7 @@ def parse_conllu(path: str) -> list[Utterance]:
             if upos == "PUNCT":
                 continue
             words.append(form.lower())
-            if deprel.startswith("discourse"):
+            if any(deprel.startswith(rel) for rel in MARKER_RELS):
                 discourse.append((lemma or form).lower())
 
         if words:
