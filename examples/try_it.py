@@ -42,6 +42,7 @@ DEMO: list[tuple[str, str]] = [
     ("i go come tomorrow", "plain statement -- no opinion"),
     ("e don finish o", "trailing 'o' -- weak hint only"),
     ("i dey come sha", "trailing 'sha' -- weak hint only"),
+    ("be like say na only you go enter that side o", "handing over -- should REPLY"),
 ]
 
 
