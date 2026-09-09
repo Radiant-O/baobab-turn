@@ -178,3 +178,80 @@ metric** — it caps how much the marker hypothesis can ever be worth.
   extra steps. Neither Claude nor any subagent writes marker content.
 - **§10** — Python 3.13 is supported (`>=3.10,<3.15`; prebuilt cp313 wheel for
   `livekit-local-inference`). CI 3.13 is required, not allow-failure.
+
+## Corpora and licences
+
+Usable, all **CC BY-SA 4.0**, all genre `spoken`, all marking `# speaker_id`
+so turn boundaries are recoverable. Maintainer for all three is Bernard Caron
+(`bernard.l.caron@gmail.com`).
+
+| Corpus | Content | Note |
+|---|---|---|
+| SUD_Naija-NSC | Nigerian Pidgin | Cite **SUD**, not UD — the `non_gold/` data exists nowhere else |
+| SUD_Hausa-SouthernAutogramm | Hausa, Zaria dialect, 1,918 sent. | Relations fully manual |
+| SUD_Hausa-NorthernAutogramm | Hausa, Ader dialect, 400 sent. | Repos hold more than the READMEs claim; check gold status |
+
+**`liva-ai/code-switching-asr` (`en-pcm/`) is the only CC BY 4.0 spontaneous
+Pidgin dialogue found** — no NC, no share-alike, ungated. 777 speaker turns
+across 4 conversations with millisecond start/end per turn, in-the-wild
+recordings among friends. Only 38 minutes, but it is the one corpus whose
+licence imposes nothing.
+
+**Dead ends worth not rediscovering.** `intronhealth/afrispeech-dialog` is
+real spontaneous dialogue but CC BY-NC-SA *and* English, not Pidgin.
+NaijaLex 2.0 is CC BY-NC-SA (its paper's CC BY does not flow to the data).
+NaijaVoices, AfriSpeech-200 and the whole `intronhealth/AfriSwitch*` family
+are CC BY-NC-SA. `liva-ai/yapdo-convo` advertises 769 h of Pidgin with **no
+licence at all** and ships four sample files with no transcripts. Several
+HuggingFace re-uploads have silently stripped upstream share-alike notices —
+verify licences upstream, never from a re-upload's badge.
+
+## What we may derive from a CC BY-SA corpus
+
+Not legal advice, but the reasoning is worth recording since it shapes the
+design.
+
+**Safe: compute counts locally, ship hand-set weights informed by them, and
+attribute.** Share-alike attaches only to *Adapted Material*, which requires
+the output to be copyrightable, to contain the licensed material in modified
+form, and to result from an act requiring permission. A frequency count fails
+all three, and §4(a) expressly grants the right to extract.
+
+**The trap is shipping the frequency table itself.** §4(b) can pull BY-SA onto
+our YAML through *database right*, which needs no originality at all — so
+"counts are facts" is not a defence. Ship **ordinal tiers**, never corpus
+frequencies.
+
+**Marker strings themselves are the safe half.** `abi`, `sey`, `wey` are
+lexical items of the language, observed rather than authored, and short words
+and phrases are not copyrightable. Extracting example *sentences* is not
+safe; vendoring the corpus is worst.
+
+## Mining caveats
+
+**`discourse` alone under-counts badly.** SUD puts emphatic and terminal
+particles under `mod:emph`, not `discourse` — the trailing `o` in "for dis
+Nigeria o //" is `PART`/`mod:emph`. Filtering on `discourse` only hid the
+entire trailing-particle class: including `mod:emph` moves `o` from invisible
+to **3,088 occurrences, the most frequent marker in the corpus**, and
+surfaces `now` (1,388) and `sef` (779, absent from our pack).
+
+**Only ~6% of the Pidgin turn evidence is manually validated.** Of 14,791
+speaker changes measured, 929 (6.3%) come from the gold 88 recordings; ~89%
+come from `non_gold/`, which is CC BY-SA and licence-clean but undocumented
+and unvalidated, with no speaker demographics. Powered enough to be useful —
+`abi` has 2 turn-final observations in the gold set alone versus 182 overall —
+but any published figure must state this.
+
+**Token-level timings are manufactured.** 99.96% of inter-pausal units have
+all-identical token durations, so per-word duration, speech rate and
+final-particle lengthening are all unavailable. Same-speaker gaps are censored
+(52% exactly zero, meaning "not independently timed"). Only cross-speaker gaps
+are real, because the two speakers sit on separate annotation tiers.
+
+**Cross-speaker gap at handover: median −230 ms, 63% negative** (13,178
+observations). The incoming speaker typically starts *before* the outgoing
+utterance ends. Overlap at handover is normal in this data, which is evidence
+against a design that simply adds patience — and is the right distribution for
+calibrating barge-in. Trim the tail before use; extreme negatives are
+alignment errors, not real overlaps.
