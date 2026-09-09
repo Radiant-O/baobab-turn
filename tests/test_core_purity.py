@@ -35,10 +35,9 @@ def _imported_roots(path: Path) -> set[str]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 roots.add(alias.name.split(".")[0])
-        elif isinstance(node, ast.ImportFrom):
-            # level > 0 is a relative import, which is always in-package.
-            if node.level == 0 and node.module:
-                roots.add(node.module.split(".")[0])
+        # level > 0 is a relative import, which is always in-package.
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            roots.add(node.module.split(".")[0])
     return roots
 
 

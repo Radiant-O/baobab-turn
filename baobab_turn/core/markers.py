@@ -20,12 +20,17 @@ import unicodedata
 
 from .types import LanguagePack, Marker
 
-__all__ = ["normalise", "tokenise", "MarkerIndex"]
+__all__ = ["MarkerIndex", "normalise", "tokenise"]
 
 # Kept as a translation table so stripping is a single C-level pass.
+#
+# The typographic characters at the end are deliberate, not a paste error: STT
+# providers emit curly quotes, em dashes and en dashes, and a marker would
+# otherwise miss whenever one appeared. RUF001 flags them as "ambiguous",
+# which is exactly why they need stripping.
 _PUNCT = {
     ord(c): None
-    for c in "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~‘’“”—–"
+    for c in "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~‘’“”—–"  # noqa: RUF001
 }
 
 
@@ -52,7 +57,7 @@ class MarkerIndex:
     joined candidate strings.
     """
 
-    __slots__ = ("_continuation", "_yield", "_ambiguous", "_max_words", "pack")
+    __slots__ = ("_ambiguous", "_continuation", "_max_words", "_yield", "pack")
 
     def __init__(self, pack: LanguagePack) -> None:
         self.pack = pack
@@ -119,6 +124,27 @@ class MarkerIndex:
         return (last, weight) if weight is not None else None
 
     def window(self, transcript_tail: str, size: int) -> list[str]:
-        """The last `size` tokens of the tail, normalised."""
-        tokens = tokenise(transcript_tail)
-        return tokens[-size:] if size > 0 else []
+        """The last `size` tokens of the tail, normalised.
+
+        Callers may hand us the whole accumulated utterance rather than a
+        tail, and this runs on every partial-transcript update, so the raw
+        string is sliced before normalising instead of after. Without that,
+        cost grows with the length of the turn for a result that only ever
+        depends on the last few tokens.
+
+        The slice can cut a word in half, which would invent a token that was
+        never spoken -- so when it truncates, the first token is discarded.
+        """
+        if size <= 0 or not transcript_tail:
+            return []
+
+        # Generous: ~40 characters per token is far more than any real word,
+        # so the window is never starved by the slice.
+        budget = size * 40
+        truncated = len(transcript_tail) > budget
+        raw = transcript_tail[-budget:] if truncated else transcript_tail
+
+        tokens = tokenise(raw)
+        if truncated and tokens:
+            tokens = tokens[1:]
+        return tokens[-size:]
