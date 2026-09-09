@@ -33,6 +33,10 @@ dev = [
   "pytest-asyncio>=0.24",
   "pytest-cov",
   "ruff",
+  # Needed by tests/test_livekit_contract.py, which pins the shape of the
+  # private SDK API the adapter depends on. Without it in CI that test skips
+  # and the whole point of having it is lost.
+  "livekit-agents>=1.6.1",
 ]
 
 [project.urls]
