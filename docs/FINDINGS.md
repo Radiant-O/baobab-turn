@@ -236,12 +236,17 @@ entire trailing-particle class: including `mod:emph` moves `o` from invisible
 to **3,088 occurrences, the most frequent marker in the corpus**, and
 surfaces `now` (1,388) and `sef` (779, absent from our pack).
 
-**Only ~6% of the Pidgin turn evidence is manually validated.** Of 14,791
-speaker changes measured, 929 (6.3%) come from the gold 88 recordings; ~89%
-come from `non_gold/`, which is CC BY-SA and licence-clean but undocumented
-and unvalidated, with no speaker demographics. Powered enough to be useful —
-`abi` has 2 turn-final observations in the gold set alone versus 182 overall —
-but any published figure must state this.
+**Most of SUD_Naija-NSC is monologue, and the defensible turn count is 937.**
+Of the 88 gold recordings, **8 are suffixed `_DG` (dialogue) and 80 `_MG`
+(monologue)** -- the filename suffix is load-bearing. The gold dialogue subset
+is 1,614 sentences / 14,623 tokens / **937 turn changes**. The larger 14,791
+figure includes `non_gold/`, which is licence-clean CC BY-SA but undocumented,
+unvalidated and carries no speaker demographics. Quote 937 unless the
+unvalidated data is explicitly in scope.
+
+**A filename trap:** recordings titled "Interview" are *single*-speaker --
+the interviewer's turns were never transcribed. Do not infer dialogue from a
+title; use the `_DG` suffix.
 
 **Token-level timings are manufactured.** 99.96% of inter-pausal units have
 all-identical token durations, so per-word duration, speech rate and
@@ -255,3 +260,54 @@ utterance ends. Overlap at handover is normal in this data, which is evidence
 against a design that simply adds patience — and is the right distribution for
 calibrating barge-in. Trim the tail before use; extreme negatives are
 alignment errors, not real overlaps.
+
+## Hausa and Zaar: the treebank is licensed, the audio is not
+
+The productive seam is one research lineage -- Bernard Caron and colleagues at
+LLACAN (CNRS), across CorpAfroAs, CorporAn, Autogramm and NaijaSynCor. Its
+signature in CoNLL-U is `# speaker_id` + `# sound_url` + `# sent_timecode`.
+The curated index is `spoken_UD_2.17.json` in `grew-nlp/corpusbank`, whose
+African members are exactly Beja, Hausa-Northern, Hausa-Southern, Naija-NSC,
+Northwest Gbaya and Zaar. **No Yoruba, no Igbo.**
+
+| Corpus | Turn changes | Licence |
+|---|---|---|
+| UD_Hausa-SouthernAutogramm (Zaria) | 1,172 | CC BY-SA 4.0 |
+| **UD_Zaar-Autogramm** (Bauchi State, Chadic) | 708 | CC BY-SA 4.0 |
+| SUD_Naija-NSC, `_DG` files only | 937 | CC BY-SA 4.0 |
+| UD_Hausa-NorthernAutogramm (Ader) | 71 | CC BY-SA 4.0 |
+
+Corrections to earlier notes: Hausa-Southern is **face-to-face peer
+conversation**, not broadcast; Hausa-Northern holds 1,305 sentences rather
+than 400, but only ~215 are genuine dialogue. Take **Zaar from the UD repo** --
+the SUD one has no licence file at all. Drop Zaar's 3 `_READ` files, which are
+read-aloud.
+
+**The ELAN and audio layer carries no reuse licence.** CorpAfroAs states only
+`Copyright (c) CorpAfroAs` with `accessRights: Freely accessible` -- free to
+*access*, with no grant to reuse or redistribute. Same for CorporAn, ELAR
+deposits and the NaijaSynCor MP3s. So the CoNLL-U treebanks are usable under
+CC BY-SA; the recordings and ELAN files they point at are not. Ask Bernard
+Caron or Christian Chanard (`christian.chanard@cnrs.fr`) before redistributing
+anything audio-derived.
+
+**Published broken link:** `# sound_url` points at `.../media/HAUZ/WAV/...`
+which 404s. The working path is `HAU/`.
+
+## Yoruba and Igbo: evidenced negatives
+
+**No Yoruba spontaneous conversational corpus exists**, verified four
+independent ways: CorporAn's 43-language file list (Yoruba absent), 1,124
+CoCoON LLACAN records via OAI (zero `yor`), the CorpAfroAs set, and 212
+ORTOLANG OAI records. ELRA holds only Iroyin-Speech (read speech, free for
+academic non-commercial); LDC only translated text and a lexicon.
+
+**No Igbo anywhere in that infrastructure** -- ELRA returns literally nothing
+for "Igbo". The only conversational Igbo corpus is IARPA Babel LDC2019S16,
+$25 to non-members but non-commercial, no redistribution, and LDC reports
+recipients to IARPA. There is no Hausa or Yoruba Babel pack; Igbo is the one
+Nigerian language the programme covered.
+
+One trace worth knowing: `SUD_Yoruba-AfriSUD` is declared in Grew's manifest
+but its backing repo 404s, so a Yoruba treebank may exist privately. Expect
+written source text if it surfaces.
