@@ -121,13 +121,72 @@ def parse_conllu(path: str) -> list[Utterance]:
     return out
 
 
+#: `SPEAKER1:`, `Speaker 1:`, `SPEAKER 1:` -- CENCOS uses all three, sometimes
+#: within one file, so the match has to be case- and space-insensitive.
+TURN_RE = re.compile(r"^\s*speaker\s*(\d+)\s*:\s*(.*)$", re.IGNORECASE)
+
+
+def read_text(path: str) -> str:
+    """Decode a transcript, tolerating either encoding.
+
+    CENCOS is documented as cp1252 but is actually UTF-8 on inspection, and
+    the two are indistinguishable without trying. UTF-8 first, because a
+    cp1252 file rarely decodes as valid UTF-8 while the reverse silently
+    produces mojibake.
+    """
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    for encoding in ("utf-8", "cp1252"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def parse_transcript(path: str) -> list[Utterance]:
+    """A plain speaker-labelled transcript, one turn per line.
+
+    No dependency annotation here, so there is no `discourse` relation to
+    cross-reference -- the positional ratios are the only evidence such a
+    corpus can give. CENCOS says as much itself: "no annotation other than
+    the speakers."
+    """
+    out: list[Utterance] = []
+    for line in read_text(path).replace("\x85", "\n").splitlines():
+        match = TURN_RE.match(line)
+        if match is None:
+            continue
+        speaker, text = match.group(1), match.group(2)
+        # Strip the transcription conventions rather than counting them as
+        # words: '...' marks a latched or trailing turn, and bracketed items
+        # are annotator notes.
+        text = re.sub(r"\[[^\]]*\]", " ", text)
+        words = [w for w in tokenise(text) if w]
+        if words:
+            out.append(Utterance(f"SP{speaker}", words, []))
+    return out
+
+
+def tokenise(text: str) -> list[str]:
+    """Lowercase words, punctuation dropped, apostrophes kept inside words."""
+    return re.findall(r"[0-9a-zÀ-ɏ']+", text.lower())
+
+
+def parse_any(path: str) -> list[Utterance]:
+    if path.lower().endswith(".conllu"):
+        return parse_conllu(path)
+    return parse_transcript(path)
+
+
 def expand(paths: list[str]) -> list[str]:
     """Accept files, directories and globs. Deduplicate by basename, since
     the same treebank is often present under two directories."""
     found: list[str] = []
     for p in paths:
         if os.path.isdir(p):
-            found.extend(sorted(glob.glob(os.path.join(p, "**", "*.conllu"), recursive=True)))
+            for ext in ("*.conllu", "*.txt"):
+                found.extend(sorted(glob.glob(os.path.join(p, "**", ext), recursive=True)))
         else:
             found.extend(sorted(glob.glob(p)))
 
@@ -142,10 +201,42 @@ def expand(paths: list[str]) -> list[str]:
     return unique
 
 
+def position_within_turn(files: list[str]):
+    """For each word: how often it ends its speaker's turn vs appears earlier.
+
+    The measure for one-line-per-turn transcripts. It answers "is this a
+    terminal particle?" rather than "does this hand the floor over?" -- a
+    weaker claim, but one the data can actually support.
+    """
+    final: collections.Counter[str] = collections.Counter()
+    elsewhere: collections.Counter[str] = collections.Counter()
+    for path in files:
+        for utt in parse_any(path):
+            for word in utt.words[:-1]:
+                elsewhere[word] += 1
+            final[utt.words[-1]] += 1
+    return final, elsewhere
+
+
+def report_position(final, elsewhere, args) -> None:
+    rows = []
+    for word, count in final.items():
+        if count < args.min_count:
+            continue
+        other = elsewhere.get(word, 0)
+        rows.append((count / (count + other), count, other, word))
+    print(f"TURN-FINAL POSITION -- ends its own turn (min {args.min_count})")
+    print(f"  {'word':20} {'final':>6} {'earlier':>8} {'ratio':>7}")
+    for ratio, count, other, word in sorted(rows, reverse=True)[: args.top]:
+        print(f"  {word:20} {count:>6} {other:>8} {ratio:>6.0%}")
+    print()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("paths", nargs="+", help=".conllu files, globs, or a directory")
+    ap.add_argument("paths", nargs="+",
+                    help=".conllu or .txt files, globs, or a directory")
     ap.add_argument("--min-count", type=int, default=5,
                     help="ignore words seen fewer times in that position (default 5). "
                          "Low counts produce meaningless 100%% ratios.")
@@ -156,7 +247,7 @@ def main() -> int:
 
     files = expand(args.paths)
     if not files:
-        print("No .conllu files found.", file=sys.stderr)
+        print("No .conllu or .txt files found.", file=sys.stderr)
         return 1
 
     turn_final: collections.Counter[str] = collections.Counter()
@@ -166,7 +257,7 @@ def main() -> int:
     speakers: set[str] = set()
 
     for path in files:
-        utts = parse_conllu(path)
+        utts = parse_any(path)
         n_utts += len(utts)
         for i, utt in enumerate(utts):
             speakers.add(utt.speaker)
@@ -190,6 +281,29 @@ def main() -> int:
     print(f"{len(files)} files, {n_utts} utterances, {len(speakers)} speaker labels")
     print(f"{n_speakers_changes} speaker changes (real turn boundaries)")
     print()
+
+    # Guard against a corpus shape the turn-final/mid-turn contrast cannot
+    # measure. Treebanks segment a turn into several inter-pausal units, so
+    # "same speaker continues" is common and the contrast is meaningful.
+    # A transcript with one line per turn has almost no within-turn
+    # structure, so nearly every utterance is turn-final and every ratio
+    # collapses to 100% -- which looks like a strong result and is an
+    # artefact. CENCOS is exactly this shape: 5,746 speaker changes across
+    # 5,911 utterances.
+    degenerate = sum(mid_turn.values()) < 0.05 * max(sum(turn_final.values()), 1)
+    if degenerate:
+        print("NOTE: this corpus transcribes one line per turn, so there is no")
+        print("within-turn structure to contrast against and the turn-final vs")
+        print("mid-turn ratios would all collapse to 100%. Reporting position")
+        print("WITHIN each turn instead, which is the measure this shape supports.")
+        print()
+        final_in_turn, elsewhere = position_within_turn(files)
+        report_position(final_in_turn, elsewhere, args)
+        print("A high ratio means the word tends to come last in its speaker's own")
+        print("turn. That is evidence of a terminal particle, but unlike the")
+        print("cross-turn measure it cannot distinguish yielding from merely")
+        print("finishing a sentence.")
+        return 0
 
     if tagged:
         print("ANNOTATED AS DISCOURSE MARKERS by the corpus linguists.")
