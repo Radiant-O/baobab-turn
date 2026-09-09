@@ -23,7 +23,7 @@ import yaml
 
 from ..core.types import LanguagePack, Marker
 
-__all__ = ["load_pack_file", "available_packs", "resolve"]
+__all__ = ["available_packs", "load_pack_file", "resolve"]
 
 log = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ def available_packs() -> dict[str, LanguagePack]:
                 continue  # _template.yaml is a starting point, not a pack
             try:
                 pack = load_pack_file(path)
-            except Exception as exc:  # noqa: BLE001 -- a bad pack must not crash
+            except Exception as exc:
                 log.warning("skipping malformed language pack %s: %s", path.name, exc)
                 continue
             if pack.code in packs:

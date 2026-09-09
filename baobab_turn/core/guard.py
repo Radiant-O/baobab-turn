@@ -14,6 +14,8 @@ through untouched.
 
 from __future__ import annotations
 
+import math
+
 from .config import BaobabConfig
 from .markers import MarkerIndex
 from .types import NULL_PACK, GuardInput, GuardResult, LanguagePack
@@ -39,8 +41,27 @@ def guard(
     pack: LanguagePack = index.pack if index is not None else NULL_PACK
 
     reasons: list[str] = []
-    p = gi.p_inner
     delay: int | None = None
+
+    # Sanitise the inner probability before any arithmetic touches it.
+    #
+    # NaN is the dangerous one: every comparison against it is False, so it
+    # slips through clamping untouched and we would hand a NaN back to the
+    # framework. An inner detector that produces NaN or infinity is
+    # malfunctioning, and we have no basis to correct a number that isn't one
+    # -- so we treat it as having no opinion at all.
+    #
+    # Out-of-range but finite values are merely wrong, not meaningless, so
+    # they are clamped rather than discarded. Clamping happens here, before
+    # the marker rules, because those rules assume p is a probability: a
+    # yield boost applied to p=5.0 would move it the wrong way.
+    p = gi.p_inner
+    if p is not None:
+        if not math.isfinite(p):
+            reasons.append("p_inner_not_finite")
+            p = None
+        else:
+            p = _clamp(float(p), 0.0, 1.0)
 
     # --- the lexical layer, and when it must keep quiet ----------------
     #
@@ -70,29 +91,45 @@ def guard(
         assert index is not None  # narrowed by tail_usable
         tokens = index.window(gi.transcript_tail or "", config.marker_window)
 
-        # Order matters. A continuation marker is a stronger claim than a
-        # yield marker -- "so..." means the speaker is mid-thought, and we
-        # would rather wait wrongly than interrupt wrongly.
-        cont = index.continuation(tokens)
-        if cont is not None:
-            phrase, weight = cont
-            p *= 1.0 - (config.continuation_veto_strength * weight)
-            reasons.append(f"continuation_veto:{phrase}")
-        else:
-            yielded = index.yields(tokens)
-            if yielded is not None:
-                phrase, weight = yielded
+        # The longest match wins, across all three marker kinds, and only
+        # then does kind break a tie.
+        #
+        # Getting this backwards is subtle and wrong. "no be so" is an
+        # unambiguous hand-off, but its last word "so" is a continuation
+        # marker; checking continuations first would veto the turn on a
+        # phrase that means the exact opposite. Length is a proxy for
+        # specificity, so the more specific marker has to win regardless of
+        # which list it came from.
+        #
+        # At equal length, continuation outranks yield: waiting wrongly costs
+        # a little latency, interrupting wrongly costs the caller's goodwill.
+        #
+        # Ambiguous markers ("sha", trailing "o") only count on a finalised
+        # transcript. Mid-utterance they mean nothing, and treating one as a
+        # hand-off is how a detector cuts someone off.
+        candidates: list[tuple[int, int, str, tuple[str, float]]] = []
+        for rank, (kind, match) in enumerate(
+            (
+                ("continuation", index.continuation(tokens)),
+                ("yield", index.yields(tokens)),
+                ("ambiguous", index.ambiguous(tokens) if gi.is_final else None),
+            )
+        ):
+            if match is not None:
+                candidates.append((len(match[0].split()), rank, kind, match))
+
+        if candidates:
+            candidates.sort(key=lambda c: (-c[0], c[1]))
+            _, _, kind, (phrase, weight) = candidates[0]
+            if kind == "continuation":
+                p *= 1.0 - (config.continuation_veto_strength * weight)
+                reasons.append(f"continuation_veto:{phrase}")
+            elif kind == "yield":
                 p += (1.0 - p) * config.yield_boost_strength * weight
                 reasons.append(f"yield_boost:{phrase}")
             else:
-                amb = index.ambiguous(tokens)
-                # Ambiguous markers only count as the final token of a
-                # finalised transcript. Mid-utterance they mean nothing, and
-                # treating one as a hand-off is how you cut someone off.
-                if amb is not None and gi.is_final:
-                    phrase, weight = amb
-                    p += (1.0 - p) * config.yield_boost_strength * weight * 0.5
-                    reasons.append(f"ambiguous_hint:{phrase}")
+                p += (1.0 - p) * config.yield_boost_strength * weight * 0.5
+                reasons.append(f"ambiguous_hint:{phrase}")
 
     # --- patience ------------------------------------------------------
     # These are delay *intents*. LiveKit cannot honour a millisecond value and
@@ -109,10 +146,24 @@ def guard(
     if config.enable_pacing and gi.mean_pause_ms is not None:
         # A caller who habitually pauses long mid-sentence has earned more
         # patience than one who does not. Rolling mean only; no ML.
-        target = gi.mean_pause_ms + (gi.stdev_pause_ms or 0.0)
-        if target > (delay or config.min_delay_ms):
-            delay = int(target)
-            reasons.append("pacing")
+        #
+        # Both stats are sanitised first. A non-finite value here is not
+        # hypothetical: a variance computed from a single observation, or a
+        # division by a zero sample count, produces inf or nan, and `int(inf)`
+        # raises OverflowError -- which on the LiveKit streaming path would
+        # escape into the SDK's unguarded call site and hang the turn.
+        mean = gi.mean_pause_ms
+        stdev = gi.stdev_pause_ms or 0.0
+        if math.isfinite(mean) and math.isfinite(stdev):
+            # Clamp before int() so the conversion can never overflow.
+            target = _clamp(
+                mean + stdev, float(config.min_delay_ms), float(config.max_delay_ms)
+            )
+            if target > (delay or config.min_delay_ms):
+                delay = int(target)
+                reasons.append("pacing")
+        else:
+            reasons.append("pacing_stats_not_finite")
 
     # --- clamp and decide ----------------------------------------------
     lo = pack.min_delay_ms if pack.min_delay_ms is not None else config.min_delay_ms
