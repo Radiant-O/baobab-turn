@@ -63,7 +63,7 @@ SPEAKER_RE = re.compile(r"^# speaker_id = (\S+)", re.MULTILINE)
 
 
 class Utterance:
-    __slots__ = ("speaker", "words", "discourse")
+    __slots__ = ("discourse", "speaker", "words")
 
     def __init__(self, speaker: str, words: list[str], discourse: list[str]) -> None:
         self.speaker = speaker
@@ -245,10 +245,12 @@ def main() -> int:
         print("# " + "-" * 68)
         print("continuation_markers:")
         for ratio, count, alt, word in holds:
-            print(f"  - {{text: \"{word}\", weight: 0.5}}   # mid {count}, final {alt}, {ratio:.0%}")
+            print(f'  - {{text: "{word}", weight: 0.5}}'
+                  f"   # mid {count}, final {alt}, {ratio:.0%}")
         print("yield_markers:")
         for ratio, count, alt, word in yields:
-            print(f"  - {{text: \"{word}\", weight: 0.5}}   # final {count}, mid {alt}, {ratio:.0%}")
+            print(f'  - {{text: "{word}", weight: 0.5}}'
+                  f"   # final {count}, mid {alt}, {ratio:.0%}")
 
     print("Ratios are evidence for a speaker to weigh, not weights. A word can top")
     print("the yield list simply because turns happened to end on it.")
