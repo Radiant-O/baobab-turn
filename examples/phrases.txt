@@ -1,0 +1,55 @@
+# Phrase bank for checking the guard against real speech.
+#
+# Run it with:   python examples/check_phrases.py
+#
+# Format, one per line:      expected | phrase
+#
+#   wait   the speaker is NOT finished. The agent must hold.
+#   reply  the speaker IS finished and inviting a response.
+#   none   ordinary speech with no turn-taking cue either way.
+#
+# Lines starting with # are ignored. Add as many as you like -- the point of
+# this file is to be long. A hundred real phrases is worth more than any
+# amount of reasoning about the engine.
+#
+# The report tells you which phrases the engine had NO opinion on. Those are
+# the gaps in the word list, and they are the useful output: each one is a
+# word or frame that should probably be in baobab_turn/packs/pcm.yaml.
+
+# --- speaker is mid-sentence: must WAIT ---------------------------------
+wait  | i wan tell you say the thing be say
+wait  | the reason be say
+wait  | wetin happen be say
+wait  | as e dey be
+wait  | na him talk am, erm
+wait  | i no gree because
+wait  | make i talk true
+wait  | i tell am say make
+wait  | the money wey
+wait  | if you go there then
+wait  | i been dey talk about am, ehm
+
+# --- speaker has finished: must REPLY ----------------------------------
+reply | e don finish abi
+reply | you dey follow
+reply | no be so
+reply | abi no be so
+reply | you get me
+reply | e clear so
+reply | you dey hear me
+reply | na all
+reply | that one nko
+reply | shey
+
+# --- weak, position-dependent cues -------------------------------------
+reply | e don finish o
+reply | i dey come sha
+reply | be like say na only you go enter that side o
+reply | come now
+
+# --- ordinary speech, no cue either way --------------------------------
+none  | i go come tomorrow
+none  | my name na chidi
+none  | the car dey outside
+none  | dem carry am go hospital
+none  | i dey work for lagos
