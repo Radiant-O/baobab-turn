@@ -178,3 +178,136 @@ metric** — it caps how much the marker hypothesis can ever be worth.
   extra steps. Neither Claude nor any subagent writes marker content.
 - **§10** — Python 3.13 is supported (`>=3.10,<3.15`; prebuilt cp313 wheel for
   `livekit-local-inference`). CI 3.13 is required, not allow-failure.
+
+## Corpora and licences
+
+Usable, all **CC BY-SA 4.0**, all genre `spoken`, all marking `# speaker_id`
+so turn boundaries are recoverable. Maintainer for all three is Bernard Caron
+(`bernard.l.caron@gmail.com`).
+
+| Corpus | Content | Note |
+|---|---|---|
+| SUD_Naija-NSC | Nigerian Pidgin | Cite **SUD**, not UD — the `non_gold/` data exists nowhere else |
+| SUD_Hausa-SouthernAutogramm | Hausa, Zaria dialect, 1,918 sent. | Relations fully manual |
+| SUD_Hausa-NorthernAutogramm | Hausa, Ader dialect, 400 sent. | Repos hold more than the READMEs claim; check gold status |
+
+**`liva-ai/code-switching-asr` (`en-pcm/`) is the only CC BY 4.0 spontaneous
+Pidgin dialogue found** — no NC, no share-alike, ungated. 777 speaker turns
+across 4 conversations with millisecond start/end per turn, in-the-wild
+recordings among friends. Only 38 minutes, but it is the one corpus whose
+licence imposes nothing.
+
+**Dead ends worth not rediscovering.** `intronhealth/afrispeech-dialog` is
+real spontaneous dialogue but CC BY-NC-SA *and* English, not Pidgin.
+NaijaLex 2.0 is CC BY-NC-SA (its paper's CC BY does not flow to the data).
+NaijaVoices, AfriSpeech-200 and the whole `intronhealth/AfriSwitch*` family
+are CC BY-NC-SA. `liva-ai/yapdo-convo` advertises 769 h of Pidgin with **no
+licence at all** and ships four sample files with no transcripts. Several
+HuggingFace re-uploads have silently stripped upstream share-alike notices —
+verify licences upstream, never from a re-upload's badge.
+
+## What we may derive from a CC BY-SA corpus
+
+Not legal advice, but the reasoning is worth recording since it shapes the
+design.
+
+**Safe: compute counts locally, ship hand-set weights informed by them, and
+attribute.** Share-alike attaches only to *Adapted Material*, which requires
+the output to be copyrightable, to contain the licensed material in modified
+form, and to result from an act requiring permission. A frequency count fails
+all three, and §4(a) expressly grants the right to extract.
+
+**The trap is shipping the frequency table itself.** §4(b) can pull BY-SA onto
+our YAML through *database right*, which needs no originality at all — so
+"counts are facts" is not a defence. Ship **ordinal tiers**, never corpus
+frequencies.
+
+**Marker strings themselves are the safe half.** `abi`, `sey`, `wey` are
+lexical items of the language, observed rather than authored, and short words
+and phrases are not copyrightable. Extracting example *sentences* is not
+safe; vendoring the corpus is worst.
+
+## Mining caveats
+
+**`discourse` alone under-counts badly.** SUD puts emphatic and terminal
+particles under `mod:emph`, not `discourse` — the trailing `o` in "for dis
+Nigeria o //" is `PART`/`mod:emph`. Filtering on `discourse` only hid the
+entire trailing-particle class: including `mod:emph` moves `o` from invisible
+to **3,088 occurrences, the most frequent marker in the corpus**, and
+surfaces `now` (1,388) and `sef` (779, absent from our pack).
+
+**Most of SUD_Naija-NSC is monologue, and the defensible turn count is 937.**
+Of the 88 gold recordings, **8 are suffixed `_DG` (dialogue) and 80 `_MG`
+(monologue)** -- the filename suffix is load-bearing. The gold dialogue subset
+is 1,614 sentences / 14,623 tokens / **937 turn changes**. The larger 14,791
+figure includes `non_gold/`, which is licence-clean CC BY-SA but undocumented,
+unvalidated and carries no speaker demographics. Quote 937 unless the
+unvalidated data is explicitly in scope.
+
+**A filename trap:** recordings titled "Interview" are *single*-speaker --
+the interviewer's turns were never transcribed. Do not infer dialogue from a
+title; use the `_DG` suffix.
+
+**Token-level timings are manufactured.** 99.96% of inter-pausal units have
+all-identical token durations, so per-word duration, speech rate and
+final-particle lengthening are all unavailable. Same-speaker gaps are censored
+(52% exactly zero, meaning "not independently timed"). Only cross-speaker gaps
+are real, because the two speakers sit on separate annotation tiers.
+
+**Cross-speaker gap at handover: median −230 ms, 63% negative** (13,178
+observations). The incoming speaker typically starts *before* the outgoing
+utterance ends. Overlap at handover is normal in this data, which is evidence
+against a design that simply adds patience — and is the right distribution for
+calibrating barge-in. Trim the tail before use; extreme negatives are
+alignment errors, not real overlaps.
+
+## Hausa and Zaar: the treebank is licensed, the audio is not
+
+The productive seam is one research lineage -- Bernard Caron and colleagues at
+LLACAN (CNRS), across CorpAfroAs, CorporAn, Autogramm and NaijaSynCor. Its
+signature in CoNLL-U is `# speaker_id` + `# sound_url` + `# sent_timecode`.
+The curated index is `spoken_UD_2.17.json` in `grew-nlp/corpusbank`, whose
+African members are exactly Beja, Hausa-Northern, Hausa-Southern, Naija-NSC,
+Northwest Gbaya and Zaar. **No Yoruba, no Igbo.**
+
+| Corpus | Turn changes | Licence |
+|---|---|---|
+| UD_Hausa-SouthernAutogramm (Zaria) | 1,172 | CC BY-SA 4.0 |
+| **UD_Zaar-Autogramm** (Bauchi State, Chadic) | 708 | CC BY-SA 4.0 |
+| SUD_Naija-NSC, `_DG` files only | 937 | CC BY-SA 4.0 |
+| UD_Hausa-NorthernAutogramm (Ader) | 71 | CC BY-SA 4.0 |
+
+Corrections to earlier notes: Hausa-Southern is **face-to-face peer
+conversation**, not broadcast; Hausa-Northern holds 1,305 sentences rather
+than 400, but only ~215 are genuine dialogue. Take **Zaar from the UD repo** --
+the SUD one has no licence file at all. Drop Zaar's 3 `_READ` files, which are
+read-aloud.
+
+**The ELAN and audio layer carries no reuse licence.** CorpAfroAs states only
+`Copyright (c) CorpAfroAs` with `accessRights: Freely accessible` -- free to
+*access*, with no grant to reuse or redistribute. Same for CorporAn, ELAR
+deposits and the NaijaSynCor MP3s. So the CoNLL-U treebanks are usable under
+CC BY-SA; the recordings and ELAN files they point at are not. Ask Bernard
+Caron or Christian Chanard (`christian.chanard@cnrs.fr`) before redistributing
+anything audio-derived.
+
+**Published broken link:** `# sound_url` points at `.../media/HAUZ/WAV/...`
+which 404s. The working path is `HAU/`.
+
+## Yoruba and Igbo: evidenced negatives
+
+**No Yoruba spontaneous conversational corpus exists**, verified four
+independent ways: CorporAn's 43-language file list (Yoruba absent), 1,124
+CoCoON LLACAN records via OAI (zero `yor`), the CorpAfroAs set, and 212
+ORTOLANG OAI records. ELRA holds only Iroyin-Speech (read speech, free for
+academic non-commercial); LDC only translated text and a lexicon.
+
+**No Igbo anywhere in that infrastructure** -- ELRA returns literally nothing
+for "Igbo". The only conversational Igbo corpus is IARPA Babel LDC2019S16,
+$25 to non-members but non-commercial, no redistribution, and LDC reports
+recipients to IARPA. There is no Hausa or Yoruba Babel pack; Igbo is the one
+Nigerian language the programme covered.
+
+One trace worth knowing: `SUD_Yoruba-AfriSUD` is declared in Grew's manifest
+but its backing repo 404s, so a Yoruba treebank may exist privately. Expect
+written source text if it surfaces.
