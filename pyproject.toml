@@ -73,3 +73,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 # what is being tested.
 "tests/test_failopen.py" = ["RUF001", "PLE2515"]
 "tests/test_markers.py" = ["RUF001"]
+# Quotes real Hausa forms from a treebank in its docstring. The IPA-style
+# length marker is the actual orthography, not a mistyped colon.
+"tools/mine_markers.py" = ["RUF002"]
