@@ -105,6 +105,7 @@ def load_pack_file(path: Path) -> LanguagePack:
             data.get("ambiguous_markers"), f"{path.name}:ambiguous_markers"
         ),
         fillers=_strs(data.get("fillers")),
+        profile_words=_strs(data.get("profile_words")),
         unlikely_threshold=opt_float("unlikely_threshold"),
         min_delay_ms=opt_int("min_delay_ms"),
         max_delay_ms=opt_int("max_delay_ms"),
