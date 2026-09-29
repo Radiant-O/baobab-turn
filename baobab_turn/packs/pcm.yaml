@@ -24,6 +24,14 @@ continuation_markers:
   - {text: "wetin i dey talk be say", weight: 0.95}
   - {text: "wetin happen be say", weight: 0.95}
   - {text: "the reason be say", weight: 0.9}
+  # The treebank spells the complementiser "sey", not "say" -- 599 tagged
+  # occurrences. Both spellings ship, because a real STT may emit either and
+  # a miss here loses the strongest frames in the pack.
+  - {text: "sey", weight: 0.7}
+  - {text: "the thing be sey", weight: 0.9}
+  - {text: "wetin i dey talk be sey", weight: 0.95}
+  - {text: "wetin happen be sey", weight: 0.95}
+  - {text: "the reason be sey", weight: 0.9}
   - {text: "as e be", weight: 0.8}
   - {text: "as e dey be", weight: 0.85}
   - {text: "na because", weight: 0.85}
@@ -42,6 +50,15 @@ continuation_markers:
   - {text: "hmm", weight: 0.6}
 
 yield_markers:
+  # Added from corpus evidence, not invented. "ba"/"bah" is a tag particle
+  # that was absent from this pack: 160 discourse-tagged occurrences, ending
+  # the turn 71% and 63% of the time respectively. "hm"/"hmhm" are
+  # backchannels -- humming and handing over -- at roughly 68% turn-final.
+  # Weights are judged, not copied from the ratios.
+  - {text: "ba", weight: 0.75}
+  - {text: "bah", weight: 0.7}
+  - {text: "hm", weight: 0.7}
+  - {text: "hmhm", weight: 0.7}
   - {text: "abi", weight: 0.9}
   - {text: "abi no be so", weight: 0.95}
   - {text: "no be so", weight: 0.9}
@@ -58,6 +75,12 @@ yield_markers:
   - {text: "nko", weight: 0.8}
 
 ambiguous_markers:
+  # Spelling variants of "now" that transcripts actually use. Same weight as
+  # "now" because they are the same word; listing them separately only
+  # because matching is on the literal string.
+  - {text: "nah", weight: 0.2, note: "spelling variant of emphatic 'now'"}
+  - {text: "naw", weight: 0.2, note: "spelling variant of emphatic 'now'"}
+  - {text: "nau", weight: 0.2, note: "spelling variant of emphatic 'now'"}
   - {text: "sha", weight: 0.4, note: "appears mid-utterance and terminally"}
   - {text: "o", weight: 0.25, note: "'e don finish o' -- usually terminal, never a hard yield"}
   - {text: "now", weight: 0.2, note: "'come now' -- not temporal"}
@@ -71,4 +94,11 @@ thresholds:
 
 validation:
   labelled_turns: 0
-  dataset_note: "no dataset yet -- markers are an untested first draft"
+  dataset_note: >-
+    Still 0 labelled turns: no turn has been hand-labelled for this pack.
+    Some markers are now corpus-derived rather than guessed -- ba/bah, hm,
+    hmhm, the sey spellings and the now variants come from SUD_Naija-NSC
+    (CC BY-SA 4.0, Bernard Caron et al.) cross-checked against CENCOS
+    (CC BY 4.0, Agbo & Plag, doi 10.5281/zenodo.7314016). Weights are judged
+    from those distributions, not copied from them. The rest remain a first
+    draft and the pack stays `experimental` until turns are labelled.
