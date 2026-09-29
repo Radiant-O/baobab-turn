@@ -4,11 +4,11 @@
 cutting Nigerian callers off mid-sentence. Framework-agnostic core, thin
 adapters, contributable language packs. MIT licensed.
 
-> **Status: pre-alpha.** The engine works and is tested. **Nothing has been
-> measured yet.** Both language packs ship as `experimental` with
-> `labelled_turns: 0`, and the benchmark table below is empty because no
-> benchmark has been run. An empty table is honest; a plausible-looking one
-> would not be.
+> **Status: pre-alpha.** The engine works, is tested, and now has a first
+> measurement — see below. It is a *lexical-layer ablation on transcripts*,
+> not an end-to-end benchmark, and it says the marker layer is accurate but
+> low-coverage. Both packs still ship as `experimental` with
+> `labelled_turns: 0`, because no turn has been hand-labelled yet.
 
 ## Benchmark
 
@@ -16,11 +16,31 @@ adapters, contributable language packs. MIT licensed.
      measurement exists. Never fill it with estimates or illustrative
      figures. -->
 
-| Dataset | Turns | Premature commit rate | Late delay p50 / p95 |
-|---|---|---|---|
-| _none yet_ | — | — | — |
+Lexical-layer ablation against [CENCOS](https://zenodo.org/records/7314016) —
+5,746 real Nigerian Pidgin turn boundaries, CC BY 4.0.
 
-Reproduce it yourself once there is one: `python -m bench.runner --help`.
+| Condition | Premature commits | Missed turn ends | Coverage | Directional accuracy |
+|---|---:|---:|---:|---:|
+| stock (no pack) | 100.0% | 0.0% | 0.0% | n/a |
+| `pcm` pack | 96.9% | 1.2% | **4.2%** | **89.9%** |
+
+**Read this honestly: the markers are accurate but rare.** When a rule fires
+it pushes the probability the right way 89.9% of the time — real signal, and
+the first evidence the hypothesis holds at all. But it fires on only 4.2% of
+decision points, because most points in a conversation do not end on a
+discourse marker. So the headline rate barely moves.
+
+That is a **ceiling on this layer, not a tuning problem.** Whatever moves the
+headline rate will be the parts that apply to every turn — pacing, tonal
+thresholds, the inner detector's own probability — not the lexicon.
+
+This is also **not an end-to-end benchmark.** There is no audio, so the guard
+judges on text with no silence cue; `p_inner` is held constant, so the
+baseline is uninformative by construction and this is an upper bound on the
+lexical layer's *standalone* signal. It answers "do these markers carry
+signal", not "does this make an agent better".
+
+Reproduce it: `python -m bench.runner <corpus> --pack pcm --ablate`
 
 ---
 
