@@ -47,10 +47,11 @@ Repository = "https://github.com/Radiant-O/baobab-turn"
 path = "baobab_turn/version.py"
 
 [tool.hatch.build.targets.wheel]
+# The YAML language packs ship automatically as package data -- hatchling
+# includes everything under a listed package. An explicit force-include for
+# them was redundant and broke the build outright, because the same files
+# were then added to the archive twice.
 packages = ["baobab_turn"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"baobab_turn/packs" = "baobab_turn/packs"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
