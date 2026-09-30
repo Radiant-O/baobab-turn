@@ -53,6 +53,14 @@ class LanguagePack:
     ambiguous_markers: tuple[Marker, ...] = ()
     fillers: tuple[str, ...] = ()
 
+    #: Ordinary vocabulary highly characteristic of this language, used only
+    #: for code-switch detection. Markers alone are too thin for that job --
+    #: neighbouring languages share most of them, and shared words cannot
+    #: discriminate. These are *not* turn-taking cues and never affect the
+    #: probability; a wrong entry costs a little misplaced patience, not a
+    #: wrong turn decision, so the bar is lower than for a marker.
+    profile_words: tuple[str, ...] = ()
+
     unlikely_threshold: float | None = None
     min_delay_ms: int | None = None
     max_delay_ms: int | None = None
