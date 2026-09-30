@@ -2,8 +2,17 @@ name: ci
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
+  # So a run can be retried by hand without an empty commit -- useful when a
+  # run failed for a reason outside the code, such as an account-level
+  # billing lock.
+  workflow_dispatch:
+
+# Actions defaults to a broadly-scoped token. Nothing here writes to the
+# repository, so drop it to read-only.
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -20,6 +29,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev]"
       - name: Lint
@@ -36,5 +47,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev]"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # The purity check imports nothing beyond the standard library, so it
+      # does not need the framework extras that dominate install time.
+      - run: pip install -e . pytest
       - run: pytest tests/test_core_purity.py -v
