@@ -53,3 +53,40 @@ jobs:
       # does not need the framework extras that dominate install time.
       - run: pip install -e . pytest
       - run: pytest tests/test_core_purity.py -v
+
+  wheel:
+    # The wheel was broken for the entire life of the project and nothing
+    # caught it, because every install was `pip install -e .` and editable
+    # installs skip wheel packaging altogether. The first person to find out
+    # would have been whoever ran `pip install baobab-turn`.
+    #
+    # So this builds the real artifact and installs it into a clean
+    # environment. Building alone is not enough: the failure mode that
+    # matters is a wheel that builds fine and ships no language packs, which
+    # only shows up when something tries to load one.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install build
+      - name: Build the wheel
+        run: python -m build --wheel
+      - name: Install it somewhere clean and load a pack
+        run: |
+          python -m venv /tmp/fresh
+          /tmp/fresh/bin/pip install dist/*.whl
+          cd /tmp   # import the installed package, never the source tree
+          /tmp/fresh/bin/python -c "
+          from baobab_turn import resolve, guard, GuardInput, MarkerIndex
+          pack = resolve('pcm')
+          assert pack is not None, 'pcm pack missing from the wheel'
+          assert pack.yield_markers, 'pack loaded but has no markers'
+          r = guard(GuardInput(p_inner=0.75, transcript_tail='e don finish abi',
+                               is_final=True), index=MarkerIndex(pack))
+          assert r.p_adjusted > 0.75, f'guard did not fire: {r.reasons}'
+          print(f'ok: {pack.name}, {len(pack.yield_markers)} yield markers, p={r.p_adjusted:.3f}')
+          "
