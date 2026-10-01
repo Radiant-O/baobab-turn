@@ -143,6 +143,18 @@ def guard(
         delay = (delay or config.min_delay_ms) + extra
         reasons.append("tonal_extra")
 
+        # A falling contour in a tonal language is ambiguous in a way it is
+        # not in English: it may be a low tone inside a word rather than the
+        # end of a sentence. The inner detector reads pitch and cannot tell
+        # the difference, so when it sounds confident on a fall, discount it.
+        #
+        # Only on a measured fall. Without a sensor this stays silent rather
+        # than damping every tonal utterance, which is what the fixed
+        # `tonal_extra_ms` alone amounts to.
+        if p is not None and gi.pitch_contour == "falling":
+            p *= 1.0 - config.tonal_falling_damp
+            reasons.append("tonal_falling_damp")
+
     if config.enable_pacing and gi.mean_pause_ms is not None:
         # A caller who habitually pauses long mid-sentence has earned more
         # patience than one who does not. Rolling mean only; no ML.

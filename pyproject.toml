@@ -26,8 +26,12 @@ dependencies = ["pyyaml>=6.0"]
 
 [project.optional-dependencies]
 livekit = ["livekit-agents>=1.6.1", "livekit-plugins-silero"]
+# Pitch tracking for the tonal rule. Optional because core/ is a rules engine
+# and a CI check forbids it importing numpy -- so prosody lives outside core
+# and nobody pays for numpy unless they want the sensor.
+prosody = ["numpy>=1.24"]
 pipecat = ["pipecat-ai"]
-all = ["baobab-turn[livekit,pipecat]"]
+all = ["baobab-turn[livekit,pipecat,prosody]"]
 dev = [
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
@@ -37,6 +41,8 @@ dev = [
   # private SDK API the adapter depends on. Without it in CI that test skips
   # and the whole point of having it is lost.
   "livekit-agents>=1.6.1",
+  # test_prosody.py skips without it, which would quietly lose 31 tests.
+  "numpy>=1.24",
 ]
 
 [project.urls]
