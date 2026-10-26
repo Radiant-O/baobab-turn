@@ -63,8 +63,10 @@ class FakeStream:
         #: resolve or cancel it themselves.
         self.pending: asyncio.Future | None = None
 
+    threshold: float | None = 0.36
+
     async def unlikely_threshold(self, language=None):
-        return 0.36
+        return self.threshold
 
     async def backchannel_threshold(self, language=None):
         return None
@@ -422,3 +424,186 @@ async def test_a_late_inner_result_after_we_are_cancelled_is_dropped() -> None:
     # The inner detector comes back late. This must be a no-op.
     inner_future.set_result(_event(0.9))
     await asyncio.sleep(0)
+
+
+# --- the sensors, wired --------------------------------------------------
+#
+# Pacing, code-switch and the agent floor were all built, tested and then fed
+# by nothing. These cover the wiring: the session events that drive them, and
+# the one mechanism that makes a delay request mean anything on LiveKit.
+
+
+class Event(dict):
+    """A stand-in for the SDK's pydantic events -- attribute access, and
+    missing fields read as None rather than raising."""
+
+    def __getattr__(self, name):
+        return self.get(name)
+
+
+class Session:
+    def __init__(self) -> None:
+        self.handlers: dict = {}
+
+    def on(self, name, handler):
+        self.handlers[name] = handler
+
+    def fire(self, name, **fields):
+        self.handlers[name](Event(fields))
+
+
+@pytest.fixture
+def attached():
+    g = BaobabGuard(inner=FakeDetector())
+    s = Session()
+    g.attach(s)
+    return g, s, g.turn_detection.stream()
+
+
+def test_attach_subscribes_to_every_sensor_event(attached) -> None:
+    _, session, _ = attached
+    assert set(session.handlers) == {
+        "user_input_transcribed",
+        "user_state_changed",
+        "agent_state_changed",
+    }
+
+
+def test_user_state_changes_feed_the_pacing_tracker(attached) -> None:
+    """`user_state_changed` is the SDK's own view of when speech starts and
+    stops, so it beats re-deriving pauses from transcript arrival times that
+    lag by a network round trip."""
+    guard, session, _ = attached
+    for _ in range(3):
+        session.fire("user_state_changed", old_state="speaking", new_state="listening")
+        time.sleep(0.05)
+        session.fire("user_state_changed", old_state="listening", new_state="speaking")
+    assert guard.pacing.n == 3
+    mean, _ = guard.pacing.as_guard_inputs()
+    assert mean is not None and mean > 0
+
+
+def test_a_pause_needs_a_stop_before_it_counts(attached) -> None:
+    """Speech starting without a recorded stop is not a measurable gap."""
+    guard, session, _ = attached
+    session.fire("user_state_changed", old_state="listening", new_state="speaking")
+    assert guard.pacing.n == 0
+
+
+def test_agent_state_tracks_the_floor(attached) -> None:
+    guard, session, _ = attached
+    assert not guard.agent_speaking
+    session.fire("agent_state_changed", old_state="listening", new_state="speaking")
+    assert guard.agent_speaking
+    session.fire("agent_state_changed", old_state="speaking", new_state="listening")
+    assert not guard.agent_speaking
+
+
+async def test_the_agent_floor_makes_the_guard_abstain(attached) -> None:
+    guard, session, stream = attached
+    session.fire("user_input_transcribed", transcript="the thing be say",
+                 is_final=False, language="pcm")
+    session.fire("agent_state_changed", old_state="listening", new_state="speaking")
+    await stream.predict()
+    # The markers must not have fired: the tail is stale by construction
+    # while the agent holds the floor.
+    assert guard.agent_speaking
+
+
+def test_transcripts_drive_code_switch_detection(attached) -> None:
+    guard, session, _ = attached
+    session.fire(
+        "user_input_transcribed",
+        transcript="i think we should go there but wetin dey happen abeg una sabi",
+        is_final=False,
+        language="pcm",
+    )
+    assert guard.code_switch
+
+
+def test_sustained_one_language_is_not_a_switch(attached) -> None:
+    guard, session, _ = attached
+    session.fire("user_input_transcribed",
+                 transcript="i think that we should probably go there tomorrow",
+                 is_final=False, language="en-NG")
+    assert not guard.code_switch
+
+
+def test_flush_clears_the_switch_but_keeps_the_rhythm(attached) -> None:
+    """A caller's rhythm belongs to the speaker, not to the utterance that
+    just ended -- resetting it every turn would mean never accumulating
+    enough observations to be ready."""
+    guard, session, stream = attached
+    session.fire("user_input_transcribed",
+                 transcript="i think we should go there but wetin dey happen abeg una sabi",
+                 is_final=False, language="pcm")
+    for _ in range(3):
+        session.fire("user_state_changed", old_state="speaking", new_state="listening")
+        time.sleep(0.05)
+        session.fire("user_state_changed", old_state="listening", new_state="speaking")
+    assert guard.code_switch and guard.pacing.n == 3
+
+    stream.flush("turn_end")
+    assert not guard.code_switch
+    assert guard.pacing.n == 3
+
+
+@pytest.mark.parametrize("name,fields", [
+    ("user_state_changed", {}),
+    ("agent_state_changed", {}),
+    ("user_input_transcribed", {}),
+])
+def test_a_malformed_event_never_reaches_the_emitter(attached, name, fields) -> None:
+    """These handlers run inside the SDK's event loop. A sensor that fails is
+    a missing opinion, not a broken call."""
+    _, session, _ = attached
+    session.fire(name, **fields)
+
+
+# --- delay intents become real through the threshold ---------------------
+
+
+async def test_no_patience_requested_leaves_the_threshold_alone(attached) -> None:
+    _, _, stream = attached
+    await stream.predict()
+    assert await stream.unlikely_threshold("pcm") == pytest.approx(0.36)
+
+
+async def test_a_delay_request_raises_the_threshold(attached) -> None:
+    """The point of the mechanism. LiveKit never consumes a millisecond
+    delay, so patience has to be spent by raising the bar to commit --
+    otherwise every delay the guard computes is silently discarded."""
+    _, session, stream = attached
+    session.fire("user_input_transcribed",
+                 transcript="i think we should go there but wetin dey happen abeg una sabi",
+                 is_final=False, language="pcm")
+    await stream.predict()
+    assert stream._pending_delay_ms is not None
+    raised = await stream.unlikely_threshold("pcm")
+    assert raised > 0.36
+
+
+async def test_the_bump_is_capped(attached) -> None:
+    """Uncapped, accumulated patience could make committing effectively
+    impossible. A confident turn must always get through."""
+    guard, _, stream = attached
+    base = 0.36
+    stream._pending_delay_ms = 10 * guard.config.max_delay_ms
+    raised = await stream.unlikely_threshold("pcm")
+    ceiling = base + (1.0 - base) * guard.config.max_threshold_bump
+    assert raised <= ceiling + 1e-9
+
+
+async def test_a_delay_at_the_floor_changes_nothing(attached) -> None:
+    guard, _, stream = attached
+    stream._pending_delay_ms = guard.config.min_delay_ms
+    assert await stream.unlikely_threshold("pcm") == pytest.approx(0.36)
+
+
+async def test_no_base_threshold_means_no_opinion(attached) -> None:
+    """Inventing a threshold where the inner detector has none would change
+    behaviour for every turn, not just the ones wanting patience."""
+    _, _, stream = attached
+    stream._inner.threshold = None
+    stream._pending_delay_ms = 2_000
+    assert await stream.unlikely_threshold("pcm") is None

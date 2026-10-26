@@ -48,12 +48,14 @@ from livekit import rtc
 from livekit.agents import APIConnectOptions, inference
 from livekit.agents.voice.turn import TurnDetectionEvent
 
+from ..core.codeswitch import CodeSwitchDetector, LanguageProfile
 from ..core.config import BaobabConfig
 from ..core.guard import guard as run_guard
 from ..core.markers import MarkerIndex
+from ..core.pacing import PacingTracker
 from ..core.tail import TranscriptTail
 from ..core.types import GuardInput, GuardResult
-from ..packs.registry import resolve
+from ..packs.registry import available_packs, resolve
 
 __all__ = ["BaobabGuard", "BaobabTurnDetector", "BaobabTurnDetectorStream"]
 
@@ -92,6 +94,9 @@ class BaobabGuard:
     ) -> None:
         self.config = config or BaobabConfig()
         self.tail = TranscriptTail()
+        #: Learns this caller's pause rhythm, so a deliberate speaker gets
+        #: patience a detector tuned to an average speaker would not give.
+        self.pacing = PacingTracker()
         self.turn_detection = BaobabTurnDetector(
             inner=inner if inner is not None else inference.TurnDetector(),
             guard=self,
@@ -99,6 +104,53 @@ class BaobabGuard:
             on_decision=on_decision,
         )
         self._indexes: dict[str, MarkerIndex | None] = {}
+        self._codeswitch: CodeSwitchDetector | None = None
+        self._code_switch = False
+        self._agent_speaking = False
+        #: When the caller last stopped speaking, for measuring the gap to
+        #: when they start again.
+        self._user_stopped_at: float | None = None
+
+    @property
+    def agent_speaking(self) -> bool:
+        """Whether the agent currently holds the floor.
+
+        Lives on the guard rather than the stream because an agent handoff
+        can replace the stream while the session carries on, and the floor
+        belongs to the session.
+        """
+        return self._agent_speaking
+
+    @property
+    def code_switch(self) -> bool:
+        """Whether the last transcript update crossed a language boundary."""
+        return self._code_switch
+
+    def _detector(self) -> CodeSwitchDetector:
+        """Built lazily from every pack we are allowed to use.
+
+        Lazily because building profiles reads every pack, and a session that
+        never sees a transcript should not pay for that.
+        """
+        if self._codeswitch is None:
+            packs = [
+                pack
+                for pack in available_packs().values()
+                if self.config.allow_community_packs or pack.status != "community"
+            ]
+            self._codeswitch = CodeSwitchDetector(
+                [LanguageProfile.from_pack(pack) for pack in packs]
+            )
+        return self._codeswitch
+
+    def reset_turn(self) -> None:
+        """Clear state that belongs to one turn.
+
+        Pacing deliberately survives: a caller's rhythm is a property of the
+        speaker, not of the utterance that just ended, and resetting it every
+        turn would mean never accumulating enough observations to be ready.
+        """
+        self._code_switch = False
 
     def index_for(self, language: str | None) -> MarkerIndex | None:
         """Cached pack lookup. None means no pack, i.e. stock behaviour."""
@@ -109,26 +161,68 @@ class BaobabGuard:
         return self._indexes[key]
 
     def attach(self, session: Any) -> None:
-        """Subscribe to the session's transcript events.
+        """Subscribe to the session events that feed the guard.
 
-        The handler must be a plain `def`: the SDK's emitter calls handlers
+        Without this the guard runs on the inner probability alone: no
+        transcript, so no markers, and none of the other sensors. The agent
+        still works, it just behaves exactly like stock -- which is a
+        confusing way to discover the call is missing.
+
+        Every handler must be a plain `def`. The SDK's emitter calls handlers
         inline and never wraps them in a task, so an `async def` here would
         return an un-awaited coroutine and silently do nothing.
+
+        Every handler also swallows its own exceptions. These run inside the
+        SDK's event loop, and a sensor that fails is a missing opinion, not a
+        broken call.
         """
 
         def _on_transcript(event: Any) -> None:
             try:
+                text = getattr(event, "transcript", "") or ""
                 self.tail.update(
-                    getattr(event, "transcript", "") or "",
+                    text,
                     is_final=bool(getattr(event, "is_final", False)),
                     language=getattr(event, "language", None),
                 )
+                # Re-read from the tail rather than using `text`: the tail is
+                # bounded and normalised, and the detector should see exactly
+                # what the marker layer will see.
+                snapshot = self.tail.snapshot()
+                if snapshot.text:
+                    self._code_switch = self._detector().detect(snapshot.text).switched
             except Exception:
-                # A transcript we failed to record is a missing opinion, not
-                # a broken call. Never let this reach the emitter.
                 log.exception("baobab: failed to record transcript")
 
+        def _on_user_state(event: Any) -> None:
+            """Measure the gap between the caller's utterances.
+
+            `user_state_changed` is the cleanest pause signal available: the
+            transitions are the SDK's own view of when speech starts and
+            stops, so we are not re-deriving it from transcript arrival times
+            that lag by a network round trip.
+            """
+            try:
+                old = getattr(event, "old_state", None)
+                new = getattr(event, "new_state", None)
+                now = time.monotonic()
+                if old == "speaking" and new != "speaking":
+                    self._user_stopped_at = now
+                elif new == "speaking" and self._user_stopped_at is not None:
+                    self.pacing.observe((now - self._user_stopped_at) * 1000.0)
+                    self._user_stopped_at = None
+            except Exception:
+                log.exception("baobab: failed to record a pause")
+
+        def _on_agent_state(event: Any) -> None:
+            try:
+                self._agent_speaking = getattr(event, "new_state", None) == "speaking"
+            except Exception:
+                log.exception("baobab: failed to track agent state")
+
         session.on("user_input_transcribed", _on_transcript)
+        session.on("user_state_changed", _on_user_state)
+        session.on("agent_state_changed", _on_agent_state)
 
 
 class BaobabTurnDetector:
@@ -181,6 +275,10 @@ class BaobabTurnDetectorStream:
         self._enabled = enabled
         self._on_decision = on_decision
         self._agent_speaking = False
+        #: Delay the guard asked for on the most recent prediction. LiveKit
+        #: queries `unlikely_threshold` immediately after each prediction
+        #: resolves, so this is read while it is still current.
+        self._pending_delay_ms: int | None = None
 
     # --- passthrough properties ---------------------------------------
 
@@ -207,21 +305,61 @@ class BaobabTurnDetectorStream:
     # --- language queries ---------------------------------------------
 
     async def unlikely_threshold(self, language: Any = None) -> float | None:
-        """A pack's threshold wins, otherwise the inner detector's.
+        """A pack's threshold wins, otherwise the inner detector's -- then
+        raised by however much patience the last prediction asked for.
 
-        This is the only graded lever LiveKit gives us. It never consumes a
-        millisecond delay from a detector -- it flips between `min_delay` and
-        `max_delay` on this threshold -- so a pack that wants more patience
-        for a tonal language expresses it here rather than through
-        `delay_override_ms`.
+        This is where `delay_override_ms` becomes real on LiveKit. The
+        session never consumes a millisecond delay from a detector; it flips
+        between `min_delay` and `max_delay` depending on whether the
+        probability fell below this threshold. So the way to buy patience is
+        to raise the bar: a borderline turn then waits, while a confident one
+        still commits promptly.
+
+        Without this, every delay the guard computes -- code-switch holds,
+        tonal patience, the caller's own rhythm -- would be calculated and
+        silently discarded on this adapter.
         """
+        base: float | None = None
         try:
             index = self._guard.index_for(_as_code(language))
             if index is not None and index.pack.unlikely_threshold is not None:
-                return index.pack.unlikely_threshold
+                base = index.pack.unlikely_threshold
         except Exception:
             log.exception("baobab: unlikely_threshold failed, deferring to inner")
-        return await self._inner.unlikely_threshold(language)
+
+        if base is None:
+            base = await self._inner.unlikely_threshold(language)
+        if base is None:
+            # The inner detector has no opinion either. Inventing one would
+            # change behaviour for everybody, not just when we want patience.
+            return None
+
+        try:
+            return self._with_patience(base)
+        except Exception:
+            log.exception("baobab: threshold adjustment failed, using base")
+            return base
+
+    def _with_patience(self, base: float) -> float:
+        """Raise `base` in proportion to the delay the guard asked for.
+
+        Scaled against the configured delay range, so asking for the maximum
+        patience applies the maximum bump and asking for the minimum changes
+        nothing. Capped by `max_threshold_bump` so a confident turn always
+        commits -- an uncapped version could accumulate enough patience to
+        make committing effectively impossible.
+        """
+        config = self._guard.config
+        delay = self._pending_delay_ms
+        if delay is None or delay <= config.min_delay_ms:
+            return base
+
+        span = config.max_delay_ms - config.min_delay_ms
+        if span <= 0:
+            return base
+        fraction = min(1.0, (delay - config.min_delay_ms) / span)
+        bump = (1.0 - base) * fraction * config.max_threshold_bump
+        return min(1.0, base + bump)
 
     async def backchannel_threshold(self, language: Any = None) -> float | None:
         return await self._inner.backchannel_threshold(language)
@@ -250,6 +388,7 @@ class BaobabTurnDetectorStream:
         # match a marker left over from the previous one.
         try:
             self._guard.tail.reset()
+            self._guard.reset_turn()
         except Exception:
             log.exception("baobab: tail reset failed")
         self._inner.flush(reason)
@@ -261,7 +400,12 @@ class BaobabTurnDetectorStream:
         await self._inner.aclose()
 
     def set_agent_speaking(self, speaking: bool) -> None:
-        """Tell the guard the agent has the floor.
+        """Tell the guard the agent has the floor, by hand.
+
+        `attach()` tracks this automatically from `agent_state_changed`, so
+        this is only needed when the guard is driven without a session. The
+        two are OR-ed: a manual override can assert the floor but never
+        release one the session is reporting.
 
         While the agent speaks, the session suppresses transcript events and
         replays them later, so any tail we hold is stale by construction.
@@ -328,19 +472,30 @@ class BaobabTurnDetectorStream:
             return event
 
         snap = self._guard.tail.snapshot()
+        mean_pause, stdev_pause = self._guard.pacing.as_guard_inputs()
         gi = GuardInput(
             p_inner=event.end_of_turn_probability,
             transcript_tail=snap.text,
             is_final=snap.is_final,
             tail_age_ms=snap.age_ms,
             language=snap.language,
-            agent_speaking=self._agent_speaking,
+            # Either source may assert the floor. The session's view comes
+            # from `agent_state_changed`; the flag is a manual override for
+            # callers driving the stream without a session.
+            agent_speaking=self._agent_speaking or self._guard.agent_speaking,
+            code_switch=self._guard.code_switch,
+            mean_pause_ms=mean_pause,
+            stdev_pause_ms=stdev_pause,
         )
 
         result = run_guard(gi, self._guard.config, self._guard.index_for(snap.language))
 
         if result.p_adjusted is not None:
             event.end_of_turn_probability = result.p_adjusted
+
+        # Read back by `unlikely_threshold`, which the session calls as soon
+        # as this prediction resolves.
+        self._pending_delay_ms = result.delay_override_ms
 
         if self._on_decision is not None:
             try:
