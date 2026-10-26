@@ -330,7 +330,7 @@ nothing more. See `docs/FINDINGS.md`.
 
 ```mermaid
 flowchart TB
-    subgraph core["baobab_turn/core — pure Python, CI-enforced no framework imports"]
+    subgraph core["baobab_turn/core — pure Python, no framework imports (enforced)"]
         T["types.py<br/>GuardInput, GuardResult"]
         C["config.py<br/>every tunable number"]
         M["markers.py<br/>longest-match lookup"]
@@ -361,7 +361,7 @@ flowchart TB
 
 **The core never knows what framework it runs inside.** A test fails the build
 if anything under `core/` imports `livekit`, `pipecat`, `torch` or `numpy`. It
-uses `ast`, not grep, so the word "livekit" in a comment does not break CI.
+uses `ast`, not grep, so the word "livekit" in a comment does not fail it.
 
 This matters commercially as well as technically: LiveKit will change its API
 again — it already has, twice. When it does you rewrite 200 lines of adapter,
@@ -440,9 +440,12 @@ flowchart LR
 ```bash
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[dev]"
-.venv/Scripts/python.exe -m pytest        # 192 tests
-.venv/Scripts/python.exe -m ruff check .
+.venv/Scripts/python.exe scripts/check.py
 ```
+
+`scripts/check.py` is the gate: lint, the full suite, the core purity check,
+and a wheel built and installed into a throwaway environment to confirm the
+language packs really ship. Pass `--fast` to skip the wheel.
 
 `tests/test_failopen.py` is the most important file in the repo. It proves a
 bug in our code cannot hang a call — including the LiveKit-specific trap that

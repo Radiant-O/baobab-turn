@@ -1,12 +1,16 @@
 name: ci
 
+# Manual only.
+#
+# Hosted runners are not part of this project's workflow, and a workflow that
+# fires on every push would leave a permanent red cross on a public
+# repository for reasons that have nothing to do with the code. The gate is
+# `python scripts/check.py`, which runs the same lint, tests, purity check
+# and wheel verification locally and for free.
+#
+# This is kept, and kept correct, so it can be triggered by hand or switched
+# back to automatic by restoring the push and pull_request triggers.
 on:
-  push:
-    branches: [main]
-  pull_request:
-  # So a run can be retried by hand without an empty commit -- useful when a
-  # run failed for a reason outside the code, such as an account-level
-  # billing lock.
   workflow_dispatch:
 
 # Actions defaults to a broadly-scoped token. Nothing here writes to the
