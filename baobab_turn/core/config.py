@@ -41,6 +41,17 @@ class BaobabConfig:
     #: framework wants a decision instead of a float. A pack may override it.
     decision_threshold: float = 0.5
 
+    #: Ceiling on how far an adapter may raise the host's commit threshold to
+    #: buy patience, when the host has no other way to accept a delay.
+    #:
+    #: LiveKit never consumes a millisecond delay from a detector; its only
+    #: lever is `unlikely_threshold`, which it queries after every
+    #: prediction. Raising that threshold means a borderline turn waits
+    #: longer. The cap exists so a confident turn still commits promptly --
+    #: without it, enough accumulated patience could make committing
+    #: effectively impossible.
+    max_threshold_bump: float = 0.25
+
     # --- feature switches ---------------------------------------------
     # Each exists so its contribution can be measured separately.
     enable_markers: bool = True
@@ -61,5 +72,7 @@ class BaobabConfig:
             raise ValueError("yield_boost_strength must be in [0, 1]")
         if not 0.0 <= self.decision_threshold <= 1.0:
             raise ValueError("decision_threshold must be in [0, 1]")
+        if not 0.0 <= self.max_threshold_bump <= 1.0:
+            raise ValueError("max_threshold_bump must be in [0, 1]")
         if self.min_delay_ms > self.max_delay_ms:
             raise ValueError("min_delay_ms cannot exceed max_delay_ms")
