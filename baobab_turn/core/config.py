@@ -34,6 +34,17 @@ class BaobabConfig:
     # --- patience ------------------------------------------------------
     codeswitch_hold_ms: int = 200
     tonal_language_extra_ms: int = 150
+
+    #: How much to discount the inner detector's confidence when a tonal
+    #: language's pitch is falling.
+    #:
+    #: Western detectors use falling intonation as evidence a sentence has
+    #: ended. In a tonal language that fall may be a low tone in the middle
+    #: of a word, so the detector has been given a cue that does not mean
+    #: here what it means in English. This is the tonal hypothesis made
+    #: concrete, and like every other flag it is a hypothesis under test:
+    #: if the ablation shows it contributes nothing, delete it.
+    tonal_falling_damp: float = 0.3
     min_delay_ms: int = 300
     max_delay_ms: int = 2500
 
@@ -59,6 +70,8 @@ class BaobabConfig:
             raise ValueError("continuation_veto_strength must be in [0, 1]")
         if not 0.0 <= self.yield_boost_strength <= 1.0:
             raise ValueError("yield_boost_strength must be in [0, 1]")
+        if not 0.0 <= self.tonal_falling_damp <= 1.0:
+            raise ValueError("tonal_falling_damp must be in [0, 1]")
         if not 0.0 <= self.decision_threshold <= 1.0:
             raise ValueError("decision_threshold must be in [0, 1]")
         if self.min_delay_ms > self.max_delay_ms:
