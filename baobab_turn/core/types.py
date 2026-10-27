@@ -115,6 +115,16 @@ class GuardInput:
     #: suppressed then, so markers cannot be trusted during barge-in.
     agent_speaking: bool = False
 
+    #: Shape of the pitch contour over the last moments of speech:
+    #: "rising", "falling", "level", "unknown", or None when nothing is
+    #: measuring it. Supplied by `baobab_turn.prosody`, which lives outside
+    #: core because estimating it needs numpy.
+    #:
+    #: Only meaningful for tonal languages, where a fall may be a low tone
+    #: rather than the end of a sentence. That ambiguity is the whole reason
+    #: the field exists.
+    pitch_contour: str | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class GuardResult:
