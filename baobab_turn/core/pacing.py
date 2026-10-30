@@ -39,14 +39,28 @@ class PacingTracker:
     anchored to how they started.
     """
 
-    __slots__ = ("_pauses", "min_samples", "window")
+    __slots__ = ("_pauses", "max_pause_ms", "min_pause_ms", "min_samples", "window")
 
-    def __init__(self, window: int = 20, min_samples: int = 3) -> None:
+    def __init__(
+        self,
+        window: int = 20,
+        min_samples: int = 3,
+        min_pause_ms: float = _MIN_PLAUSIBLE_MS,
+        max_pause_ms: float = _MAX_PLAUSIBLE_MS,
+    ) -> None:
         if window < 1:
             raise ValueError("window must be at least 1")
         if min_samples < 1:
             raise ValueError("min_samples must be at least 1")
+        if not 0 <= min_pause_ms < max_pause_ms:
+            raise ValueError("need 0 <= min_pause_ms < max_pause_ms")
         self.window = window
+        #: What counts as rhythm rather than an outlier. The defaults are
+        #: speech pauses. Chat needs a wider band -- people take seconds
+        #: between messages and that is still their rhythm, not a pause to
+        #: look something up -- so the caller sets its own.
+        self.min_pause_ms = float(min_pause_ms)
+        self.max_pause_ms = float(max_pause_ms)
         #: Below this many observations the estimate is noise. Reporting a
         #: confident mean from one pause would hand the guard a number that
         #: looks like evidence and is not.
@@ -63,7 +77,7 @@ class PacingTracker:
         """
         if not math.isfinite(pause_ms):
             return False
-        if not (_MIN_PLAUSIBLE_MS <= pause_ms <= _MAX_PLAUSIBLE_MS):
+        if not (self.min_pause_ms <= pause_ms <= self.max_pause_ms):
             return False
         self._pauses.append(float(pause_ms))
         return True
