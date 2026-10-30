@@ -14,12 +14,14 @@ is no safety net below this file.
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 
 import pytest
 
 livekit = pytest.importorskip("livekit.agents", reason="needs livekit-agents")
 
+from livekit import rtc  # noqa: E402
 from livekit.agents.voice.turn import (  # noqa: E402
     TurnDetectionEvent,
     _StreamingTurnDetector,
@@ -607,3 +609,183 @@ async def test_no_base_threshold_means_no_opinion(attached) -> None:
     stream._inner.threshold = None
     stream._pending_delay_ms = 2_000
     assert await stream.unlikely_threshold("pcm") is None
+
+
+# --- pitch -------------------------------------------------------------
+#
+# The tonal rule was the one sensor-less claim left in the system: packs
+# said `tonal: true` and the guard waited longer for everyone speaking that
+# language, whatever their pitch was doing. These cover the wiring that
+# lets it react to one actual fall instead.
+
+np = pytest.importorskip("numpy", reason="pitch needs baobab-turn[prosody]")
+
+
+def _glide(
+    hz_start: float,
+    hz_end: float,
+    *,
+    rate: int = 16_000,
+    ms_total: int = 600,
+    ms_frame: int = 20,
+    channels: int = 1,
+) -> list[rtc.AudioFrame]:
+    """Synthesise a voiced glide as a list of real `rtc.AudioFrame`s.
+
+    A pure tone rather than recorded speech: the sensor only ever answers
+    rising/falling/level, and a synthetic glide pins that down without
+    committing a wav file to the repo.
+    """
+    per = rate * ms_frame // 1000
+    total = rate * ms_total // 1000
+    frames: list[rtc.AudioFrame] = []
+    phase = 0.0
+    for start in range(0, total, per):
+        buf = bytearray()
+        for i in range(per):
+            hz = hz_start + (hz_end - hz_start) * ((start + i) / total)
+            phase += 2.0 * math.pi * hz / rate
+            sample = int(20_000 * math.sin(phase))
+            for _ in range(channels):
+                buf += sample.to_bytes(2, "little", signed=True)
+        frames.append(rtc.AudioFrame(bytes(buf), rate, channels, per))
+    return frames
+
+
+def _tonal(g: BaobabGuard, code: str = "yo", **kw) -> None:
+    from baobab_turn.core.markers import MarkerIndex
+    from baobab_turn.core.types import LanguagePack
+
+    g._indexes[code] = MarkerIndex(
+        LanguagePack(code=code, name="Test", tonal=True, **kw)
+    )
+
+
+def _feed(stream, frames) -> None:
+    for frame in frames:
+        stream.push_audio(frame)
+
+
+async def test_a_measured_fall_damps_a_tonal_language() -> None:
+    """The whole point of the sensor. A falling contour in a tonal language
+    may be a low tone mid-word, so a confident inner probability on a fall
+    is exactly the one to discount."""
+    g, s = _make(p=0.8)
+    _tonal(g)
+    _feed(s, _glide(220.0, 120.0))
+    g.tail.update("mo ti sọ", is_final=True, language="yo")
+
+    assert g.pitch_contour == "falling"
+    event = await s.predict()
+    assert event.end_of_turn_probability == pytest.approx(0.8 * 0.7)
+
+
+async def test_a_rising_contour_is_not_damped() -> None:
+    g, s = _make(p=0.8)
+    _tonal(g)
+    _feed(s, _glide(120.0, 220.0))
+    g.tail.update("mo ti sọ", is_final=True, language="yo")
+
+    assert g.pitch_contour == "rising"
+    event = await s.predict()
+    assert event.end_of_turn_probability == pytest.approx(0.8)
+
+
+async def test_a_level_contour_is_not_damped() -> None:
+    g, s = _make(p=0.8)
+    _tonal(g)
+    _feed(s, _glide(180.0, 180.0))
+    g.tail.update("mo ti sọ", is_final=True, language="yo")
+
+    assert g.pitch_contour == "level"
+    event = await s.predict()
+    assert event.end_of_turn_probability == pytest.approx(0.8)
+
+
+async def test_a_fall_in_a_non_tonal_language_is_left_alone() -> None:
+    """English speakers fall at the end of sentences and mean it. The rule
+    must not fire just because a sensor is attached."""
+    g, s = _make(p=0.8)
+    _feed(s, _glide(220.0, 120.0))
+    g.tail.update("that is all", is_final=True, language="en")
+
+    assert g.pitch_contour == "falling"
+    event = await s.predict()
+    assert event.end_of_turn_probability == pytest.approx(0.8)
+
+
+async def test_flush_clears_the_contour() -> None:
+    """A fall belongs to the utterance that just ended. Carrying it into the
+    next turn would damp a probability on evidence about different audio."""
+    g, s = _make()
+    _tonal(g)
+    _feed(s, _glide(220.0, 120.0))
+    assert g.pitch_contour == "falling"
+
+    s.flush("eou")
+    assert g.pitch_contour is None
+
+
+async def test_audio_reaches_the_inner_detector_even_when_the_sensor_throws(
+    monkeypatch,
+) -> None:
+    """push_audio is on the hot path and the SDK does not wrap it. A broken
+    sensor must cost pitch, never the call."""
+    g, s = _make()
+
+    def boom(self, *a, **kw):
+        raise RuntimeError("sensor exploded")
+
+    monkeypatch.setattr(adapter.PitchTracker, "push_samples", boom)
+    _feed(s, _glide(220.0, 120.0))
+
+    assert g.turn_detection._inner.streams[0].audio_frames == 30
+    assert g.pitch is None  # disabled, not raising once per frame
+    assert g.pitch_contour is None
+
+
+async def test_a_disabled_sensor_stays_disabled() -> None:
+    """Re-arming it per frame would mean paying for the failed import on
+    every frame of a long call."""
+    g, s = _make()
+    g.pitch = None
+    _feed(s, _glide(220.0, 120.0))
+    assert g.pitch is None
+
+
+async def test_no_sensor_when_the_tonal_rule_is_off() -> None:
+    from baobab_turn.core.config import BaobabConfig
+
+    g = BaobabGuard(inner=FakeDetector(), config=BaobabConfig(enable_tonal=False))
+    assert g.pitch is None
+    assert g.pitch_contour is None
+
+
+async def test_stereo_frames_take_one_channel_rather_than_every_sample() -> None:
+    """Reading an interleaved stereo frame as a flat mono buffer halves the
+    apparent frequency, which would turn every stereo call's pitch into
+    nonsense without ever raising."""
+    g, s = _make()
+    _feed(s, _glide(200.0, 200.0, channels=2))
+
+    assert g.pitch is not None
+    measured = sorted(g.pitch._f0)[len(g.pitch._f0) // 2]
+    assert measured == pytest.approx(200.0, rel=0.1)
+
+
+async def test_objects_that_are_not_audio_frames_are_ignored() -> None:
+    """Callers drive this stream directly in tests and in non-LiveKit
+    harnesses. A sensor is not a reason to reject input the inner detector
+    accepts."""
+    g, s = _make()
+
+    class Weird:
+        data = "not a buffer"
+        sample_rate = 16_000
+        num_channels = 1
+
+    s.push_audio(object())
+    s.push_audio(Weird())
+    assert g.pitch is not None
+    assert g.pitch_contour is None
+    assert g.turn_detection._inner.streams[0].audio_frames == 2

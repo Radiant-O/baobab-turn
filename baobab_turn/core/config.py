@@ -45,6 +45,16 @@ class BaobabConfig:
     #: concrete, and like every other flag it is a hypothesis under test:
     #: if the ablation shows it contributes nothing, delete it.
     tonal_falling_damp: float = 0.3
+
+    #: How much audio to accumulate before estimating f0 once, in ms.
+    #:
+    #: A single LiveKit frame is 10-20ms, which is shorter than one period
+    #: of a 70Hz voice -- autocorrelation has nothing to lock onto, so pitch
+    #: cannot be estimated from one frame at all. 40ms spans at least two
+    #: periods of the lowest voice we accept, and still yields ~25 estimates
+    #: a second, well above what the tracker's 12-point history needs.
+    pitch_window_ms: int = 40
+
     min_delay_ms: int = 300
     max_delay_ms: int = 2500
 
@@ -83,6 +93,8 @@ class BaobabConfig:
             raise ValueError("yield_boost_strength must be in [0, 1]")
         if not 0.0 <= self.tonal_falling_damp <= 1.0:
             raise ValueError("tonal_falling_damp must be in [0, 1]")
+        if self.pitch_window_ms < 1:
+            raise ValueError("pitch_window_ms must be at least 1")
         if not 0.0 <= self.decision_threshold <= 1.0:
             raise ValueError("decision_threshold must be in [0, 1]")
         if not 0.0 <= self.max_threshold_bump <= 1.0:
