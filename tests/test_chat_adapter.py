@@ -220,3 +220,161 @@ def test_hostile_messages_do_not_raise(chat) -> None:
     for text in ("\x00\x01", "!!!???", "a" * 10_000, "🙂" * 200):
         chat.on_message(text)
         chat.should_reply()
+
+
+# --- pacing ------------------------------------------------------------
+#
+# The chat form of the voice problem: the default settle time is a guess
+# about an average typist, and answering a slow one on that schedule is
+# interrupting them.
+
+
+def test_a_slow_sender_is_not_answered_on_a_fast_sender_s_schedule(clock) -> None:
+    """Messages four seconds apart are this person's rhythm, so one second
+    of quiet is nothing. The same second answers a fast sender."""
+    chat = ChatTurnGuard(language="pcm", now=clock)
+    for text in ("so", "i dey come", "but e get as e be", "you hear"):
+        chat.on_message(text)
+        clock.tick(4.0)
+
+    clock.tick(-4.0)  # undo the gap after the final message
+    clock.tick(1.0)
+    assert chat._settle_ms() == 4_000
+    assert not chat.should_reply().reply
+
+
+def test_a_fast_sender_is_answered_on_the_default_schedule(clock) -> None:
+    chat = ChatTurnGuard(language="pcm", now=clock)
+    for text in ("so", "i dey come", "but e get as e be", "you hear"):
+        chat.on_message(text)
+        clock.tick(0.4)
+
+    clock.tick(-0.4)
+    clock.tick(1.0)
+    # Nobody types faster than the default assumes, so the floor holds.
+    assert chat._settle_ms() == 2_000
+    assert chat.should_reply().reply
+
+
+def test_one_gap_is_not_a_rhythm(clock) -> None:
+    """min_samples guards this: a settle time stretched by a single long
+    gap would be a number that looks like evidence and is not."""
+    chat = ChatTurnGuard(language="pcm", now=clock)
+    chat.on_message("so")
+    clock.tick(6.0)
+    chat.on_message("i dey come")
+    assert not chat.pacing.ready
+    assert chat._settle_ms() == 2_000
+
+
+def test_the_gap_between_bursts_is_not_rhythm(clock) -> None:
+    """Coming back to a conversation after a minute says nothing about how
+    fast somebody types."""
+    chat = ChatTurnGuard(language="pcm", now=clock)
+    chat.on_message("first thing")
+    clock.tick(120.0)
+    chat.on_message("different thing")
+    assert chat.pacing.n == 0
+
+
+def test_pacing_is_capped(clock) -> None:
+    """Without a ceiling a few long gaps would push the agent into never
+    answering at all."""
+    cfg = ChatConfig(max_settle_ms=5_000)
+    chat = ChatTurnGuard(language="pcm", now=clock, chat_config=cfg)
+    for text in ("a", "b", "c", "d"):
+        chat.on_message(text)
+        clock.tick(19.0)
+    assert chat._settle_ms() == 5_000
+
+
+def test_pacing_survives_a_reply_but_the_switch_does_not(clock) -> None:
+    """How fast somebody types is a property of them. Which languages this
+    burst crossed is a property of the burst."""
+    chat = ChatTurnGuard(language="pcm", now=clock)
+    for text in ("i think we should go", "but wetin dey happen abeg una sabi"):
+        chat.on_message(text)
+        clock.tick(3.0)
+    chat.on_message("oga")
+    assert chat.pacing.n > 0
+    assert chat.code_switch
+
+    chat.on_reply_sent()
+    assert chat.pacing.n > 0
+    assert not chat.code_switch
+
+
+def test_pacing_can_be_switched_off(clock) -> None:
+    from baobab_turn.core.config import BaobabConfig
+
+    chat = ChatTurnGuard(
+        language="pcm", now=clock, config=BaobabConfig(enable_pacing=False)
+    )
+    for text in ("a", "b", "c", "d"):
+        chat.on_message(text)
+        clock.tick(8.0)
+    assert chat._settle_ms() == 2_000
+
+
+# --- code-switching ----------------------------------------------------
+
+
+def test_a_switch_across_two_messages_is_seen(clock) -> None:
+    """People switch language *between* messages as readily as within one,
+    and no single message here contains the switch."""
+    chat = ChatTurnGuard(language="pcm", now=clock)
+    chat.on_message("i think we should probably go there tomorrow")
+    clock.tick(1.0)
+    assert not chat.code_switch
+
+    chat.on_message("but wetin dey happen abeg una sabi")
+    assert chat.code_switch
+
+
+def test_a_switch_buys_patience(clock) -> None:
+    """The guard turns a switch into a delay, and in chat a delay is how
+    long before we ask again."""
+    chat = ChatTurnGuard(language="pcm", now=clock)
+    chat.on_message("i think we should probably go there tomorrow")
+    clock.tick(0.2)
+    chat.on_message("but wetin dey happen abeg una sabi")
+    clock.tick(0.2)
+
+    d = chat.should_reply()
+    assert not d.reply
+    assert "codeswitch_hold" in d.reasons
+
+
+def test_sustained_one_language_is_not_a_switch(clock) -> None:
+    chat = ChatTurnGuard(language="pcm", now=clock)
+    chat.on_message("wetin dey happen for there")
+    clock.tick(1.0)
+    chat.on_message("i no sabi oga abeg wetin una dey do")
+    assert not chat.code_switch
+
+
+def test_code_switch_can_be_switched_off(clock) -> None:
+    from baobab_turn.core.config import BaobabConfig
+
+    chat = ChatTurnGuard(
+        language="pcm", now=clock, config=BaobabConfig(enable_codeswitch=False)
+    )
+    chat.on_message("i think we should probably go there tomorrow")
+    chat.on_message("but wetin dey happen abeg una sabi")
+    assert not chat.code_switch
+
+
+def test_a_broken_detector_does_not_stop_the_conversation(clock, monkeypatch) -> None:
+    """A sensor is never a reason to stop answering somebody."""
+    chat = ChatTurnGuard(language="pcm", now=clock)
+
+    def boom(self):
+        raise RuntimeError("detector exploded")
+
+    monkeypatch.setattr(
+        "baobab_turn.adapters.chat.ChatTurnGuard._detector", boom
+    )
+    chat.on_message("wetin dey happen abeg")
+    clock.tick(10)
+    assert not chat.code_switch
+    assert chat.should_reply().reply

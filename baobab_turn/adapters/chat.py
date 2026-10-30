@@ -43,11 +43,13 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from ..core.codeswitch import CodeSwitchDetector, LanguageProfile
 from ..core.config import BaobabConfig
 from ..core.guard import guard as run_guard
 from ..core.markers import MarkerIndex
+from ..core.pacing import PacingTracker
 from ..core.types import GuardInput
-from ..packs.registry import resolve
+from ..packs.registry import available_packs, resolve
 
 __all__ = ["ChatConfig", "ChatTurnGuard", "ReplyDecision"]
 
@@ -79,6 +81,18 @@ class ChatConfig:
 
     #: How long to wait before asking again when the answer is "not yet".
     poll_interval_ms: int = 250
+
+    #: What counts as this person's typing rhythm, rather than an outlier.
+    #: Much wider than the speech defaults: a four-second gap between two
+    #: chat messages is ordinary, where in speech it would mean the caller
+    #: had stopped to look something up.
+    min_gap_ms: int = 250
+    max_gap_ms: int = 20_000
+
+    #: Ceiling on a settle time extended by measured pacing. Without it a
+    #: sender who happens to produce a few long gaps would push the agent
+    #: into never answering at all.
+    max_settle_ms: int = 8_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,8 +127,21 @@ class ChatTurnGuard:
             ...answer chat.burst_text()
     """
 
-    __slots__ = ("_burst", "_chat", "_config", "_index", "_last_message_at",
-                 "_now", "_replying", "_typing", "language")
+    __slots__ = (
+        "_allow_community",
+        "_burst",
+        "_chat",
+        "_code_switch",
+        "_codeswitch",
+        "_config",
+        "_index",
+        "_last_message_at",
+        "_now",
+        "_pacing",
+        "_replying",
+        "_typing",
+        "language",
+    )
 
     def __init__(
         self,
@@ -134,6 +161,16 @@ class ChatTurnGuard:
         self._last_message_at: float | None = None
         self._typing = False
         self._replying = False
+        self._allow_community = allow_community_packs
+        #: This person's own rhythm between messages in a burst. Someone who
+        #: sends three messages four seconds apart is not finished after two
+        #: seconds of quiet just because a faster sender would be.
+        self._pacing = PacingTracker(
+            min_pause_ms=self._chat.min_gap_ms,
+            max_pause_ms=self._chat.max_gap_ms,
+        )
+        self._codeswitch: CodeSwitchDetector | None = None
+        self._code_switch = False
 
     # --- events -------------------------------------------------------
 
@@ -151,8 +188,16 @@ class ChatTurnGuard:
             gap_ms = (now - self._last_message_at) * 1000.0
             if gap_ms > self._chat.burst_gap_ms:
                 self._burst.clear()
+                self._code_switch = False
+            else:
+                # Only gaps *within* a burst are rhythm. The gap across a
+                # burst boundary is however long it took someone to come
+                # back to the conversation, which says nothing about how
+                # fast they type.
+                self._pacing.observe(gap_ms)
         self._burst.append(text.strip())
         self._last_message_at = now
+        self._detect_code_switch()
         # A message having arrived means they are no longer mid-keystroke on
         # it. Transports are inconsistent about clearing this themselves.
         self._typing = False
@@ -167,6 +212,11 @@ class ChatTurnGuard:
         self._last_message_at = None
         self._typing = False
         self._replying = False
+        # Pacing deliberately survives. How fast this person types is a
+        # property of the person, not of the burst that just ended, and
+        # resetting it every reply would mean never gathering enough
+        # observations to be ready.
+        self._code_switch = False
 
     def set_replying(self, replying: bool) -> None:
         """Whether the agent is currently generating or streaming a reply.
@@ -177,6 +227,70 @@ class ChatTurnGuard:
         judging it against a stale burst is worse than not judging it.
         """
         self._replying = bool(replying)
+
+    # --- sensors ------------------------------------------------------
+
+    def _detector(self) -> CodeSwitchDetector:
+        """Built lazily from every pack we are allowed to use.
+
+        Lazily because building profiles reads every pack on disk, and a
+        conversation that never receives a message should not pay for it.
+        """
+        if self._codeswitch is None:
+            packs = [
+                pack
+                for pack in available_packs().values()
+                if self._allow_community or pack.status != "community"
+            ]
+            self._codeswitch = CodeSwitchDetector(
+                [LanguageProfile.from_pack(pack) for pack in packs]
+            )
+        return self._codeswitch
+
+    def _detect_code_switch(self) -> None:
+        """Re-measure across the whole burst, not the latest message alone.
+
+        Switching languages is something people do *between* messages as
+        readily as within one -- "i no fit come today" then "let me explain"
+        is a switch that no single message contains. Measuring the burst as
+        one string is the only way to see it.
+        """
+        if not self._config.enable_codeswitch:
+            return
+        try:
+            self._code_switch = self._detector().detect(self.burst_text()).switched
+        except Exception:
+            # A sensor is never a reason to stop answering somebody.
+            self._code_switch = False
+
+    @property
+    def code_switch(self) -> bool:
+        """Whether the current burst crosses a language boundary."""
+        return self._code_switch
+
+    @property
+    def pacing(self) -> PacingTracker:
+        """This person's rhythm between messages. Exposed for inspection."""
+        return self._pacing
+
+    def _settle_ms(self) -> float:
+        """How long the quiet must run before the burst counts as finished.
+
+        Extended by the sender's own rhythm, because the default is a guess
+        about an average typist and this is a measurement of *this* one.
+        Someone whose messages arrive four seconds apart has not finished
+        after two seconds of quiet; treating them as finished is the chat
+        form of interrupting, which is the thing this package exists to
+        stop.
+        """
+        base = float(self._chat.settle_ms)
+        if not self._config.enable_pacing or not self._pacing.ready:
+            return base
+        mean, stdev = self._pacing.as_guard_inputs()
+        if mean is None:
+            return base
+        target = mean + (stdev or 0.0)
+        return min(max(base, target), float(self._chat.max_settle_ms))
 
     # --- state --------------------------------------------------------
 
@@ -197,11 +311,12 @@ class ChatTurnGuard:
         silence = self.silence_ms
         if silence is None:
             return self._chat.fresh_probability, "no_messages"
-        if silence >= self._chat.settle_ms:
+        settle = self._settle_ms()
+        if silence >= settle:
             return self._chat.settled_probability, "settled"
         # Linear ramp between fresh and settled. Linear on purpose: anything
         # cleverer would be a curve fitted to no data.
-        fraction = silence / self._chat.settle_ms
+        fraction = silence / settle
         span = self._chat.settled_probability - self._chat.fresh_probability
         return self._chat.fresh_probability + span * fraction, "settling"
 
@@ -213,6 +328,7 @@ class ChatTurnGuard:
             return ReplyDecision(False, 0.0, self._chat.poll_interval_ms, ("nothing_to_answer",))
 
         p_base, why = self._baseline()
+        mean_pause, stdev_pause = self._pacing.as_guard_inputs()
         result = run_guard(
             GuardInput(
                 p_inner=p_base,
@@ -224,6 +340,9 @@ class ChatTurnGuard:
                 tail_age_ms=0.0,
                 language=self.language,
                 agent_speaking=self._replying,
+                code_switch=self._code_switch,
+                mean_pause_ms=mean_pause,
+                stdev_pause_ms=stdev_pause,
             ),
             self._config,
             self._index,
@@ -242,7 +361,7 @@ class ChatTurnGuard:
             wait = max(wait, result.delay_override_ms)
         silence = self.silence_ms
         if silence is not None and not self._typing:
-            remaining = self._chat.settle_ms - silence
+            remaining = self._settle_ms() - silence
             if 0 < remaining < wait:
                 wait = int(remaining)
         return ReplyDecision(False, p, int(wait), reasons)
