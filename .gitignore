@@ -24,3 +24,8 @@ bench/datasets/audio/
 # Benchmark run artifacts
 bench/out/
 *.jsonl
+
+# Research reading kept locally. Not ours to redistribute, and an sdist
+# will happily ship anything sitting in the repo root.
+*.pdf
+onyenwe_thesis.txt

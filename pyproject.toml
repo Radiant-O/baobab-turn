@@ -61,6 +61,27 @@ Issues = "https://github.com/Radiant-O/baobab-turn/issues"
 [tool.hatch.version]
 path = "baobab_turn/version.py"
 
+[tool.hatch.build.targets.sdist]
+# An allowlist, not an exclude list. hatchling's default sdist is "every
+# file in the directory that git does not ignore", which swept two
+# untracked research PDFs sitting in the repo root into 0.1.0 and
+# published 2.9 MB of someone else's thesis to PyPI under our MIT licence.
+#
+# An exclude list would have to anticipate every stray file anyone ever
+# leaves here. This cannot: a file not named below does not ship.
+only-include = [
+  "baobab_turn",
+  "bench",
+  "docs",
+  "examples",
+  "scripts",
+  "tests",
+  "tools",
+  "README.md",
+  "LICENSE",
+  "CLAUDE.md",
+]
+
 [tool.hatch.build.targets.wheel]
 # The YAML language packs ship automatically as package data -- hatchling
 # includes everything under a listed package. An explicit force-include for
