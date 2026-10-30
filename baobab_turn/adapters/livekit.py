@@ -56,6 +56,7 @@ from ..core.pacing import PacingTracker
 from ..core.tail import TranscriptTail
 from ..core.types import GuardInput, GuardResult
 from ..packs.registry import available_packs, resolve
+from ..prosody import PitchTracker
 
 __all__ = ["BaobabGuard", "BaobabTurnDetector", "BaobabTurnDetectorStream"]
 
@@ -106,6 +107,17 @@ class BaobabGuard:
         self._indexes: dict[str, MarkerIndex | None] = {}
         self._codeswitch: CodeSwitchDetector | None = None
         self._code_switch = False
+        #: Measures the shape of the caller's pitch, so the tonal rule can
+        #: react to *this* fall rather than to the language in general.
+        #: None when the rule is switched off, and set to None permanently
+        #: if the optional numpy extra turns out to be missing -- the rule
+        #: then stays silent, which is exactly the behaviour from before the
+        #: sensor existed.
+        self.pitch: PitchTracker | None = (
+            PitchTracker() if self.config.enable_tonal else None
+        )
+        #: Samples awaiting a full analysis window, as plain ints.
+        self._pcm: list[int] = []
         self._agent_speaking = False
         #: When the caller last stopped speaking, for measuring the gap to
         #: when they start again.
@@ -125,6 +137,73 @@ class BaobabGuard:
     def code_switch(self) -> bool:
         """Whether the last transcript update crossed a language boundary."""
         return self._code_switch
+
+    @property
+    def pitch_contour(self) -> str | None:
+        """The shape of the caller's recent pitch, or None if not yet known.
+
+        "unknown" is flattened to None so the guard sees the same absence it
+        sees when the sensor is not installed at all. Two spellings of "no
+        opinion" would be two code paths to keep in step.
+        """
+        tracker = self.pitch
+        if tracker is None:
+            return None
+        contour = tracker.contour()
+        return None if contour == "unknown" else contour
+
+    def observe_audio(self, frame: Any) -> None:
+        """Feed one audio frame to the pitch tracker.
+
+        Buffered, because f0 cannot be estimated from a single frame: at
+        10-20ms a LiveKit frame is shorter than one period of a 70Hz voice,
+        so autocorrelation has nothing to lock onto. Samples accumulate
+        until there is a window worth analysing.
+
+        Made mono by taking the first channel rather than averaging. On one
+        speaker averaging is harmless, but on two it invents a pitch neither
+        of them produced -- and the frame layout does not tell us which case
+        this is.
+
+        Tolerates objects that are not audio frames at all. Callers drive
+        this stream directly in tests and in non-LiveKit harnesses, and a
+        sensor is never a reason to reject input the inner detector accepts.
+        """
+        tracker = self.pitch
+        if tracker is None:
+            return
+
+        data = getattr(frame, "data", None)
+        rate = int(getattr(frame, "sample_rate", 0) or 0)
+        if data is None or rate <= 0:
+            return
+
+        channels = int(getattr(frame, "num_channels", 1) or 1)
+        try:
+            samples = data[::channels].tolist() if channels > 1 else data.tolist()
+        except (AttributeError, TypeError, ValueError):
+            return
+
+        need = max(2, rate * self.config.pitch_window_ms // 1000)
+        self._pcm.extend(samples)
+        while len(self._pcm) >= need:
+            window = self._pcm[:need]
+            del self._pcm[:need]
+            try:
+                tracker.push_samples(window, rate)
+            except Exception:
+                # numpy is an optional extra and this runs on the audio hot
+                # path, which the SDK does not wrap. Disable the sensor for
+                # good rather than raise once per frame for the rest of the
+                # call.
+                self.pitch = None
+                self._pcm.clear()
+                log.warning(
+                    "baobab: pitch tracking disabled; "
+                    "install baobab-turn[prosody] for the tonal rule",
+                    exc_info=True,
+                )
+                return
 
     def _detector(self) -> CodeSwitchDetector:
         """Built lazily from every pack we are allowed to use.
@@ -149,8 +228,16 @@ class BaobabGuard:
         Pacing deliberately survives: a caller's rhythm is a property of the
         speaker, not of the utterance that just ended, and resetting it every
         turn would mean never accumulating enough observations to be ready.
+
+        The pitch contour does not survive. It describes the shape of one
+        utterance, and carrying the last turn's fall into this one would
+        damp a probability on evidence that is no longer about the audio
+        being judged.
         """
         self._code_switch = False
+        if self.pitch is not None:
+            self.pitch.reset()
+        self._pcm.clear()
 
     def index_for(self, language: str | None) -> MarkerIndex | None:
         """Cached pack lookup. None means no pack, i.e. stock behaviour."""
@@ -376,7 +463,14 @@ class BaobabTurnDetectorStream:
     # --- audio and lifecycle ------------------------------------------
 
     def push_audio(self, frame: rtc.AudioFrame) -> None:
+        # Inner first, always. This call site is not wrapped by the SDK, so
+        # the detector must have its audio before our sensor gets a chance
+        # to misbehave.
         self._inner.push_audio(frame)
+        try:
+            self._guard.observe_audio(frame)
+        except Exception:
+            log.exception("baobab: pitch observation failed")
 
     def cancel_inference(self, *, timed_out: bool = False) -> None:
         # Means "that pause was not the end after all", NOT "the utterance
@@ -486,6 +580,7 @@ class BaobabTurnDetectorStream:
             code_switch=self._guard.code_switch,
             mean_pause_ms=mean_pause,
             stdev_pause_ms=stdev_pause,
+            pitch_contour=self._guard.pitch_contour,
         )
 
         result = run_guard(gi, self._guard.config, self._guard.index_for(snap.language))
