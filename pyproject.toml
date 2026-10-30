@@ -7,17 +7,22 @@ name = "baobab-turn"
 dynamic = ["version"]
 description = "Turn detection for African speech. Framework-agnostic core, thin adapters, contributable language packs."
 readme = "README.md"
+authors = [{ name = "Abiodun Bukoye" }]
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 keywords = ["turn-detection", "voice-agents", "african-languages", "livekit", "pipecat", "speech"]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Multimedia :: Sound/Audio :: Speech",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
 ]
 
 # core/ has exactly one runtime dependency: YAML, for loading language packs.
@@ -43,11 +48,15 @@ dev = [
   "livekit-agents>=1.6.1",
   # test_prosody.py skips without it, which would quietly lose 31 tests.
   "numpy>=1.24",
+  # Release tooling: `twine check` catches a README that PyPI would refuse
+  # to render, which is only discoverable before upload, never after.
+  "twine",
 ]
 
 [project.urls]
 Homepage = "https://github.com/Radiant-O/baobab-turn"
 Repository = "https://github.com/Radiant-O/baobab-turn"
+Issues = "https://github.com/Radiant-O/baobab-turn/issues"
 
 [tool.hatch.version]
 path = "baobab_turn/version.py"
