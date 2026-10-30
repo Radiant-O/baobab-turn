@@ -1,0 +1,117 @@
+# Language pack template.
+#
+# Copy this file to `<code>.yaml` in this directory and fill it in. Files
+# starting with `_` are never loaded, so this one is safe to leave here.
+#
+#   cp _template.yaml yo.yaml
+#
+# You do not need to write any Python. This file is the whole contribution.
+#
+#
+# ## Who should fill this in
+#
+# A person who speaks the language. Not a dictionary, not a translation of
+# the Pidgin pack, and not a language model. The entries below are claims
+# about how speakers of this language hand the floor to each other, and that
+# is knowledge a speaker has and a translator does not. A plausible-looking
+# list of words that no speaker actually uses this way is worse than an
+# empty file: it makes the agent confidently wrong instead of merely
+# average.
+#
+# If you are unsure about an entry, leave it out. Coverage is cheap to add
+# later; a wrong entry quietly cuts people off.
+#
+#
+# ## What the three marker lists mean
+#
+# They answer one question: when a speaker says this near the end of what
+# they have said so far, are they finished?
+#
+#   continuation_markers  "I am not finished" -- more is coming
+#   yield_markers         "I am finished" -- your turn
+#   ambiguous_markers     could be either; only counted on final text
+#
+# The most valuable entries are usually multi-word frames that announce a
+# clause is still coming. Those carry information no detector trained on
+# English has. Single conjunctions are useful too but much weaker.
+#
+# Longest match wins across all three lists, so a specific phrase beats a
+# general word inside it.
+#
+#
+# ## Weights
+#
+# 0.0 to 1.0: how reliably this marker means what the list says.
+#
+#   0.9 - 1.0   almost always; a speaker would be surprised to be cut off
+#   0.7 - 0.9   usually
+#   0.5 - 0.7   more often than not
+#   below 0.5   probably not worth including
+#
+# Judge these. Do not compute them from a corpus frequency and paste the
+# number in -- how often a word ends a turn is not the same as how strongly
+# it signals the end of one.
+
+code: xx                      # ISO 639 code: "yo", "ig", "ha", "sw", "am"
+name: Language Name           # as written in English
+region_hint: []               # country codes, e.g. [NG, BJ]
+status: experimental          # leave as experimental until turns are labelled
+maintainer: ""                # your name or handle, so questions can reach you
+
+# Is this a tonal language -- does pitch distinguish word meaning?
+#
+# Set true for Yoruba, Igbo, Hausa, Twi, Shona, Zulu and most of the
+# Niger-Congo and Bantu families. It makes the detector treat a falling
+# pitch with suspicion, because in a tonal language a fall may be a low
+# tone inside a word rather than the end of a sentence.
+tonal: false
+tonal_extra_ms: 0             # 0 uses the global default
+
+# Languages speakers of this one commonly switch into mid-sentence.
+commonly_switches_with: []
+
+# "I am not finished."
+continuation_markers: []
+#  - {text: "", weight: 0.9}
+
+# "I am finished, your turn." Tag questions and appeals to the listener are
+# often the strongest entries here.
+yield_markers: []
+#  - {text: "", weight: 0.9}
+
+# Could be either. Only applied to text the transcriber has marked final,
+# because mid-utterance these mean nothing and treating one as a hand-off
+# is how a detector cuts somebody off.
+ambiguous_markers: []
+#  - {text: "", weight: 0.4}
+
+# Hesitation sounds. Not turn-taking cues; listed so they can be ignored
+# rather than mistaken for words.
+fillers: []
+
+# Ordinary vocabulary that is highly characteristic of this language.
+#
+# Used only to notice code-switching, never to decide a turn, so the bar is
+# lower than for a marker -- a wrong entry costs a little misplaced patience
+# rather than a wrong decision. Avoid words shared with neighbouring
+# languages: a shared word cannot tell two languages apart, and is
+# discarded anyway.
+#
+# Twenty to fifty everyday words works well. Greetings, common verbs,
+# pronouns and discourse particles are all good choices.
+profile_words: []
+
+# Per-language overrides. null means "use the global default", which is
+# almost always right until there is data saying otherwise.
+thresholds:
+  unlikely_threshold: null
+  min_delay_ms: null
+  max_delay_ms: null
+
+# Honesty fields. Never inflate these -- they are displayed wherever the
+# pack is listed, and an untested pack saying so is the point.
+validation:
+  labelled_turns: 0
+  dataset_note: >-
+    How this pack was built, and against what. If nothing has been
+    labelled, say so plainly.
