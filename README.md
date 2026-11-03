@@ -385,14 +385,13 @@ not the project.
 | Framework | Status | Notes |
 |---|---|---|
 | **LiveKit Agents** | ✅ working | ≥1.6.1. Wraps the streaming audio detector. |
-| **Pipecat** | 🔨 planned | Target is `BaseUserTurnStopStrategy`, which receives interim transcripts and language natively. |
+| **Pipecat** | ✅ working | ≥1.15.0. Wraps a `BaseTurnAnalyzer`, attached via `TurnAnalyzerUserTurnStopStrategy`. The only host that can honour a delay exactly. |
 | **Custom / in-house** | ✅ working | Import the core directly — see above. |
 | **Vapi / Retell / Bland** | ❌ impossible | Managed platforms own the conversation loop and expose config knobs only. Structural, not a missing feature. |
 
 ### Possible future integrations
 
-- **Pipecat adapter** — also the proof that the core boundary is real. An
-  abstraction with one implementation is not an abstraction.
+- **Ultravox adapter.**
 - **Nigerian STT adapters.** Intron Sahara is the only provider with streaming
   interim transcripts, but it is sales-gated with no published pricing, so it
   can only ever be an optional extra. **No Nigerian STT is openly licensed for
@@ -414,20 +413,20 @@ not the project.
 Stated plainly, because the credibility of a project like this is its only
 real asset.
 
-- **Nothing has been measured.** No benchmark has been run, so every claim
-  about whether this helps is currently an opinion.
-- **No benchmark runner.** `bench/metrics.py` defines the numbers and is
-  golden-file tested; `runner.py` and `report.py` do not exist yet.
-- **No labelling tool.** `tools/label.py` is not written.
-- **No labelled data.** This is the real bottleneck, not the code.
-- **No Pipecat adapter**, so the core/adapter boundary is asserted rather than
-  proven.
-- **`codeswitch.py` and `pacing.py` are not built.** The guard accepts their
-  inputs and acts on them; nothing computes them yet.
-- **`set_agent_speaking()` is implemented and tested but not wired** to a
-  session event, so the barge-in abstention path is dormant.
-- **Marker weights are guesses.** Corpus evidence exists for some of them; the
-  packs have not been updated from it yet.
+- **No labelled data.** This is the real bottleneck, and it has not moved.
+  Both packs still ship `labelled_turns: 0`. `tools/label.py` exists now, so
+  the path from a recording to a number is open — nobody has walked it yet.
+- **The tonal rule has never met a human voice.** It has a sensor, it has
+  tests, and every one of those tests feeds it a synthetic glide. No
+  openly-licensed Yoruba or Igbo conversational corpus exists to check it
+  against; this is the single largest unverified claim in the project.
+- **Only the lexical layer has been measured.** The benchmark above is a
+  transcript ablation. Pacing, code-switching and pitch apply on every turn
+  and none of them appear in a published number yet.
+- **Marker weights are judged, not fitted.** Some are now corpus-derived
+  rather than guessed, but no weight has been tuned against an outcome.
+- **No end-to-end latency figure.** Nothing has measured what the guard costs
+  a real call, as opposed to what it costs a unit test.
 
 ## Roadmap
 
