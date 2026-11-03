@@ -54,7 +54,13 @@ def test_required_fields_are_present() -> None:
     assert cff["cff-version"] == "1.2.0"
     assert cff["type"] == "software"
     assert cff["message"]
-    assert cff["authors"] and cff["authors"][0]["family-names"]
+    # CFF allows a person (family-names/given-names) or an entity (name).
+    # This project credits a handle rather than a legal name, which is the
+    # entity form, and both are valid -- the assertion is that somebody is
+    # named at all.
+    author = cff["authors"][0]
+    assert cff["authors"]
+    assert author.get("name") or author.get("family-names")
 
 
 def test_licence_agrees_with_the_repo() -> None:
