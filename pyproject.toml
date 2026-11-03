@@ -7,7 +7,7 @@ name = "baobab-turn"
 dynamic = ["version"]
 description = "Turn detection for African speech. Framework-agnostic core, thin adapters, contributable language packs."
 readme = "README.md"
-authors = [{ name = "Abiodun Bukoye" }]
+authors = [{ name = "Radiant-O" }]
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 keywords = ["turn-detection", "voice-agents", "african-languages", "livekit", "pipecat", "speech"]
