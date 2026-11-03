@@ -376,6 +376,7 @@ not the project.
 | **LiveKit Agents** | ✅ working | ≥1.6.1. Wraps the streaming audio detector. |
 | **Pipecat** | 🔨 planned | Target is `BaseUserTurnStopStrategy`, which receives interim transcripts and language natively. |
 | **Custom / in-house** | ✅ working | Import the core directly — see above. |
+| **Ultravox Realtime** | ⚠️ config only | The model decides turns server-side and the protocol has no veto. A pack can set `vadSettings.turnEndpointDelay` and nothing else — `adapters/ultravox.py`. |
 | **Vapi / Retell / Bland** | ❌ impossible | Managed platforms own the conversation loop and expose config knobs only. Structural, not a missing feature. |
 
 ### Possible future integrations
