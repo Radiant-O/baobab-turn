@@ -62,6 +62,18 @@ class BaobabConfig:
     #: framework wants a decision instead of a float. A pack may override it.
     decision_threshold: float = 0.5
 
+    #: The probability to assume when the host gives a decision instead of a
+    #: float, and that decision is "the turn is over".
+    #:
+    #: Pipecat's analyzers return COMPLETE or INCOMPLETE with no confidence
+    #: attached, but the guard's lexical rules are multiplicative and need a
+    #: number to work on. 1.0 means "the inner detector is certain", which
+    #: has a deliberate consequence: with the default veto strength only a
+    #: marker weighted above 0.83 can overturn it. Those are exactly the long
+    #: verbal frames -- "the thing be say" -- that announce a clause is still
+    #: coming. A weak hint should not overrule a confident detector.
+    complete_probability: float = 1.0
+
     #: Ceiling on how far an adapter may raise the host's commit threshold to
     #: buy patience, when the host has no other way to accept a delay.
     #:
@@ -99,5 +111,7 @@ class BaobabConfig:
             raise ValueError("decision_threshold must be in [0, 1]")
         if not 0.0 <= self.max_threshold_bump <= 1.0:
             raise ValueError("max_threshold_bump must be in [0, 1]")
+        if not 0.0 <= self.complete_probability <= 1.0:
+            raise ValueError("complete_probability must be in [0, 1]")
         if self.min_delay_ms > self.max_delay_ms:
             raise ValueError("min_delay_ms cannot exceed max_delay_ms")

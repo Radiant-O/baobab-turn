@@ -35,7 +35,12 @@ livekit = ["livekit-agents>=1.6.1", "livekit-plugins-silero"]
 # and a CI check forbids it importing numpy -- so prosody lives outside core
 # and nobody pays for numpy unless they want the sensor.
 prosody = ["numpy>=1.24"]
-pipecat = ["pipecat-ai"]
+# Floored at 1.15.0: that release moved the turn analyzer off
+# TransportParams and onto the user-turn stop strategy, which is the wiring
+# the adapter documents and tests/test_pipecat_contract.py pins. Pipecat
+# itself needs 3.11, so the marker keeps a 3.10 install of this package
+# resolvable rather than failing on an extra it cannot use.
+pipecat = ["pipecat-ai>=1.15.0; python_version>='3.11'"]
 all = ["baobab-turn[livekit,pipecat,prosody]"]
 dev = [
   "pytest>=8.0",
@@ -48,6 +53,9 @@ dev = [
   "livekit-agents>=1.6.1",
   # test_prosody.py skips without it, which would quietly lose 31 tests.
   "numpy>=1.24",
+  # Same reasoning as livekit-agents above: without it the Pipecat contract
+  # tests skip, and a contract test that skips pins nothing.
+  "pipecat-ai>=1.15.0; python_version>='3.11'",
   # Release tooling: `twine check` catches a README that PyPI would refuse
   # to render, which is only discoverable before upload, never after.
   "twine",
