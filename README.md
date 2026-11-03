@@ -502,10 +502,10 @@ is still worth having — that is how both shipped packs started.
 Radiant-O (2026). baobab-turn. DOI: 10.5281/zenodo.23822193
 ```
 
+Attribution is welcome but not the point — this is a tool, not a paper. The
+DOI is here because an archived, versioned snapshot is useful on its own:
 `10.5281/zenodo.23822193` is the concept DOI and always resolves to the
-newest release. Use it in prose. For a specific result, cite the version
-DOI shown on that release's Zenodo record instead, so the number stays
-attached to the code that produced it.
+newest release.
 
 GitHub's "Cite this repository" button reads `CITATION.cff` and will render
 BibTeX or APA for you.

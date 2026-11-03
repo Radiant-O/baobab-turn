@@ -4,8 +4,7 @@ type: software
 title: baobab-turn
 abstract: "Turn detection for African speech in voice agents. Framework-agnostic core, thin adapters, contributable language packs."
 authors:
-  - family-names: Radiant-O
-    given-names: Radiant-O
+  - name: "Radiant-O"
 repository-code: "https://github.com/Radiant-O/baobab-turn"
 url: "https://github.com/Radiant-O/baobab-turn"
 license: MIT
