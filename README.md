@@ -4,9 +4,21 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23822193.svg)](https://doi.org/10.5281/zenodo.23822193)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
-**Turn detection for African speech.** A guard layer that stops voice agents
-cutting Nigerian callers off mid-sentence. Framework-agnostic core, thin
-adapters, contributable language packs. MIT licensed.
+**Turn detection for the speakers your detector was not trained on.**
+
+Voice agents interrupt people whose speech does not match the rhythm their
+turn detector learned. That is not a niche: it covers speakers of tonal
+languages, people who code-switch mid-sentence, anyone talking in a second
+language and pausing to find a word, and anyone who is simply slower than
+average — through age, a stammer, or a bad line.
+
+This is a guard layer that sits in front of the detector and holds the turn
+open when the language, the rhythm or the pitch says it should.
+
+Built and measured on Nigerian speech, because that is where the author can
+tell whether an answer is actually right. **The engine is not Nigerian.**
+Packs are YAML and need no Python; the pacing layer needs no language at
+all. Framework-agnostic core, thin adapters. MIT licensed.
 
 > **Status: pre-alpha.** The engine works, is tested, and now has a first
 > measurement — see below. It is a *lexical-layer ablation on transcripts*,
@@ -154,6 +166,22 @@ pip install -e ".[dev]"               # plus tests and lint
 ```
 
 Python 3.10–3.14. The core has exactly one runtime dependency: `pyyaml`.
+
+### Speakers the detector will rush
+
+One preset applies to nobody's language in particular — a caller who is
+slower than the detector expects, through age, a stammer, speaking a second
+language, or a bad line:
+
+```python
+from baobab_turn.core.config import BaobabConfig
+
+config = BaobabConfig.patient()
+```
+
+The pacing layer already adapts to such a caller, but only after it has seen
+a few of their pauses. This raises the floor so the opening turns are
+covered too, which is where being cut off costs the most.
 
 ## Quickstart — LiveKit
 

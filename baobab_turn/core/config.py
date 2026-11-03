@@ -96,6 +96,30 @@ class BaobabConfig:
     #: they are opt-in. Never on by default.
     allow_community_packs: bool = False
 
+    @classmethod
+    def patient(cls, **overrides: object) -> BaobabConfig:
+        """Settings for a speaker the detector will rush: slower, or new to
+        the language, or working around a stammer, or on a bad line.
+
+        The pacing layer already adapts to such a speaker, but only after it
+        has seen `PacingTracker.min_samples` pauses. Until then the caller is
+        judged by a default tuned for somebody faster, which is exactly the
+        opening of a call where being cut off costs the most. This raises the
+        floor so the first turns are covered too, and keeps the ceiling high
+        enough that a genuinely long pause is still allowed to finish.
+
+        Nothing here is language-specific. It is the one preset in this
+        package that applies to a monolingual English speaker as readily as
+        to anyone else.
+        """
+        settings: dict[str, object] = {
+            "min_delay_ms": 700,
+            "max_delay_ms": 4_000,
+            "max_tail_age_ms": 1_200,
+        }
+        settings.update(overrides)
+        return cls(**settings)  # type: ignore[arg-type]
+
     def __post_init__(self) -> None:
         if self.marker_window < 1:
             raise ValueError("marker_window must be at least 1")

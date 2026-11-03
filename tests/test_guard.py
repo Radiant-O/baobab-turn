@@ -337,3 +337,58 @@ def test_config_validation_rejects_nonsense() -> None:
         BaobabConfig(continuation_veto_strength=1.5)
     with pytest.raises(ValueError):
         BaobabConfig(min_delay_ms=3000, max_delay_ms=1000)
+
+
+# --- the patient preset ------------------------------------------------
+#
+# The one setting in this package that is about nobody's language. It is for
+# a speaker the detector will rush: slower, or new to the language, or
+# working around a stammer, or on a bad line.
+
+
+def test_patient_raises_the_floor_without_removing_the_ceiling() -> None:
+    from baobab_turn.core.config import BaobabConfig
+
+    default, patient = BaobabConfig(), BaobabConfig.patient()
+    assert patient.min_delay_ms > default.min_delay_ms
+    assert patient.max_delay_ms > default.max_delay_ms
+    assert patient.max_delay_ms < 10_000  # still a conversation, not a form
+
+
+def test_patient_covers_the_turns_before_pacing_has_learned_anything() -> None:
+    """Pacing adapts to a slow speaker, but only after min_samples pauses.
+    The opening of a call is both unprotected by it and the worst place to
+    cut somebody off."""
+    from baobab_turn.core.config import BaobabConfig
+    from baobab_turn.core.types import GuardInput
+
+    gi = GuardInput(p_inner=0.9, code_switch=True)  # no pacing stats yet
+    default = guard(gi, BaobabConfig())
+    patient = guard(gi, BaobabConfig.patient())
+    assert patient.delay_override_ms is not None
+    assert default.delay_override_ms is not None
+    assert patient.delay_override_ms > default.delay_override_ms
+
+
+def test_patient_accepts_overrides_and_still_validates() -> None:
+    from baobab_turn.core.config import BaobabConfig
+
+    assert BaobabConfig.patient(min_delay_ms=900).min_delay_ms == 900
+    with pytest.raises(ValueError):
+        BaobabConfig.patient(min_delay_ms=99_999)
+
+
+def test_patient_changes_no_language_behaviour() -> None:
+    """It is a timing preset. If it started moving probabilities it would be
+    a different feature wearing this one's name."""
+    from baobab_turn.core.config import BaobabConfig
+
+    default, patient = BaobabConfig(), BaobabConfig.patient()
+    for field in (
+        "continuation_veto_strength",
+        "yield_boost_strength",
+        "decision_threshold",
+        "tonal_falling_damp",
+        "complete_probability",
+    ):
+        assert getattr(patient, field) == getattr(default, field)
