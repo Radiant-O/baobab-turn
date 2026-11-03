@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+type: software
+title: baobab-turn
+abstract: "Turn detection for African speech in voice agents. Framework-agnostic core, thin adapters, contributable language packs."
+authors:
+  - family-names: Bukoye
+    given-names: Abiodun
+repository-code: "https://github.com/Radiant-O/baobab-turn"
+url: "https://github.com/Radiant-O/baobab-turn"
+license: MIT
+version: 0.1.1
+date-released: 2026-10-30
+doi: 10.5281/zenodo.23822193
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23822193
+    description: "Concept DOI: always resolves to the newest version."
+keywords:
+  - turn-detection
+  - voice-agents
+  - african-languages
+  - nigerian-pidgin
+  - speech
+  - low-resource-languages
