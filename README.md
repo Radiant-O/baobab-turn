@@ -1,5 +1,9 @@
 # baobab-turn
 
+[![PyPI](https://img.shields.io/pypi/v/baobab-turn)](https://pypi.org/project/baobab-turn/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23822193.svg)](https://doi.org/10.5281/zenodo.23822193)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
+
 **Turn detection for African speech.** A guard layer that stops voice agents
 cutting Nigerian callers off mid-sentence. Framework-agnostic core, thin
 adapters, contributable language packs. MIT licensed.
@@ -138,11 +142,18 @@ explain is a decision you cannot tune.
 ## Install
 
 ```bash
-pip install -e ".[livekit]"      # with the LiveKit adapter
-pip install -e ".[dev]"          # plus tests and lint
+pip install baobab-turn               # core only
+pip install "baobab-turn[livekit]"    # with the LiveKit adapter
+pip install "baobab-turn[prosody]"    # with the pitch sensor for tonal languages
 ```
 
-Python 3.10–3.13. The core has exactly one runtime dependency: `pyyaml`.
+Or from a clone, to work on it:
+
+```bash
+pip install -e ".[dev]"               # plus tests and lint
+```
+
+Python 3.10–3.14. The core has exactly one runtime dependency: `pyyaml`.
 
 ## Quickstart — LiveKit
 
@@ -454,14 +465,26 @@ the SDK does **not** wrap a custom streaming detector's call site in
 
 ## Contributing a language
 
-`LANGUAGE_PACKS.md` is not written yet, deliberately — pointing contributors
-at an unproven engine wastes their goodwill, and you get one first impression.
-Once there are numbers:
+You do not need to write any Python. A pack is one YAML file.
 
-1. Copy `packs/_template.yaml`.
-2. Write the markers **as a speaker of the language**. Never translate them.
-3. Record and label 100 turns with `tools/label.py`.
-4. Run the benchmark on your pack and submit the numbers with it.
+1. Copy `baobab_turn/packs/community/_template.yaml` to `<code>.yaml`. The
+   template carries its own instructions — there is no second document to
+   find.
+2. Write the markers **as a speaker of the language**. Never translate them
+   from another pack, and never generate them with a model: a plausible list
+   of words no speaker actually uses this way makes the agent confidently
+   wrong instead of merely average.
+3. Check it: `python tools/validate_pack.py your-pack.yaml`. It catches the
+   failures that are otherwise silent — an entry that can never match, the
+   same word claimed as both "finished" and "not finished", a `validated`
+   status with nothing labelled.
+4. Record a conversation and label it: `python tools/label.py new rec.wav
+   --out bench/datasets/<code>/s1.txt`. Audio never enters the repo; the
+   manifest references it by digest.
+5. Run the benchmark on your pack and submit the numbers with it.
+
+Steps 1–3 are useful on their own. A pack with honest `labelled_turns: 0`
+is still worth having — that is how both shipped packs started.
 
 ## Principles
 
@@ -472,6 +495,20 @@ Once there are numbers:
 - **Small honest datasets beat large vague claims.**
 - **Delete features that don't move the numbers.** Every config flag is a
   hypothesis under test, not a commitment.
+
+## Citing this
+
+```
+Radiant-O (2026). baobab-turn. DOI: 10.5281/zenodo.23822193
+```
+
+`10.5281/zenodo.23822193` is the concept DOI and always resolves to the
+newest release. Use it in prose. For a specific result, cite the version
+DOI shown on that release's Zenodo record instead, so the number stays
+attached to the code that produced it.
+
+GitHub's "Cite this repository" button reads `CITATION.cff` and will render
+BibTeX or APA for you.
 
 ## Licence
 
