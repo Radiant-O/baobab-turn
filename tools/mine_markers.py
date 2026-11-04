@@ -311,6 +311,15 @@ def clean_sbcsae(text: str) -> str:
     return SBC_UNCLEAR.sub(" ", text)
 
 
+#: Hyphens are kept inside a word here, unlike the other readers.
+#:
+#: SBCSAE hyphenates things that are genuinely one word: `x-ray`, and
+#: reduplicated vocalisations like `hm-m`. Splitting on the hyphen turns
+#: those into `x` + `ray` and `hm` + `m`, and the stray `m` reached the
+#: candidate list 29 times looking like a word somebody said.
+SBC_TOKEN_RE = re.compile(r"[0-9a-zÀ-ɏ'-]+")
+
+
 def tokenise_sbcsae(text: str) -> list[str]:
     """Like `tokenise`, but drops words the speaker cut off.
 
@@ -326,7 +335,10 @@ def tokenise_sbcsae(text: str) -> list[str]:
     for chunk in text.lower().split():
         if chunk.rstrip(".,?!;:\"')").endswith("-"):
             continue
-        out.extend(TOKEN_RE.findall(chunk))
+        for token in SBC_TOKEN_RE.findall(chunk):
+            token = token.strip("-")
+            if token:
+                out.append(token)
     return out
 
 
@@ -409,6 +421,34 @@ def expand(paths: list[str]) -> list[str]:
     return unique
 
 
+def phrase_counts(files: list[str], length: int):
+    """Turn-final versus mid-turn for the last `length` words of a unit.
+
+    A single word is often the tail of a phrase that carries the real
+    signal. `know` and `mean` top the English continuation list, but what
+    speakers actually say is "you know" and "I mean" -- and because the
+    marker index matches longest-first, a pack that knows the phrase will
+    use it in preference to the bare word.
+
+    Phrases are also less ambiguous than their last word. `know` ends a turn
+    often enough to be unreliable on its own; "you know" is a different
+    object with a different distribution.
+    """
+    final: collections.Counter[str] = collections.Counter()
+    mid: collections.Counter[str] = collections.Counter()
+    for path in files:
+        utts = parse_any(path)
+        for i, utt in enumerate(utts):
+            if len(utt.words) < length or i + 1 >= len(utts):
+                continue
+            phrase = " ".join(utt.words[-length:])
+            if utts[i + 1].speaker != utt.speaker:
+                final[phrase] += 1
+            else:
+                mid[phrase] += 1
+    return final, mid
+
+
 def position_within_turn(files: list[str]):
     """For each word: how often it ends its speaker's turn vs appears earlier.
 
@@ -449,6 +489,10 @@ def main() -> int:
                     help="ignore words seen fewer times in that position (default 5). "
                          "Low counts produce meaningless 100%% ratios.")
     ap.add_argument("--top", type=int, default=25)
+    ap.add_argument("--phrases", type=int, default=0, metavar="N",
+                    help="also rank the last N words as a phrase, e.g. 2 for "
+                         "'you know'. Repeatable meaning: 2 reports two-word "
+                         "endings, 3 reports three-word endings.")
     ap.add_argument("--yaml", action="store_true",
                     help="emit a pack skeleton for a speaker to edit")
     args = ap.parse_args()
@@ -533,6 +577,18 @@ def main() -> int:
 
     yields = ranked(turn_final, mid_turn)
     holds = ranked(mid_turn, turn_final)
+
+    if args.phrases > 1:
+        p_final, p_mid = phrase_counts(files, args.phrases)
+        print(f"{args.phrases}-WORD ENDINGS -- the phrase, not just its last word")
+        print(f"  {'phrase':30} {'final':>6} {'mid':>5} {'ratio':>7}")
+        for ratio, count, alt, phrase in ranked(p_final, p_mid):
+            print(f"  {phrase:30} {count:>6} {alt:>5} {ratio:>6.0%}")
+        print()
+        print(f"  {'phrase':30} {'mid':>6} {'final':>5} {'ratio':>7}")
+        for ratio, count, alt, phrase in ranked(p_mid, p_final):
+            print(f"  {phrase:30} {count:>6} {alt:>5} {ratio:>6.0%}")
+        print()
 
     # The intersection is the strongest evidence this tool can produce: a
     # linguist judged the word to be a discourse marker, AND its position
