@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "baobab-turn"
 dynamic = ["version"]
-description = "Turn detection for African speech. Framework-agnostic core, thin adapters, contributable language packs."
+description = "Turn detection for the speakers your detector was not trained on. Framework-agnostic core, thin adapters, contributable language packs."
 readme = "README.md"
 authors = [{ name = "Radiant-O" }]
 license = { file = "LICENSE" }
@@ -93,6 +93,7 @@ only-include = [
   "tests",
   "tools",
   "README.md",
+  "CHANGELOG.md",
   "LICENSE",
   "CLAUDE.md",
   "CITATION.cff",
