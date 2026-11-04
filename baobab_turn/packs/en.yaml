@@ -1,0 +1,158 @@
+# English.
+#
+# This is the widest-reaching pack in the repository, and not because
+# English matters more. `resolve()` falls back from a locale to its base
+# code, so this one file answers for en-GB, en-IN, en-KE, en-AU, en-ZA and
+# every other English a caller might report, while en-NG still wins for
+# Nigeria on exact match. A speaker whose own English has no pack stops
+# getting nothing and starts getting this.
+#
+# ## Where the content came from
+#
+# Counted, not written. Every marker below was mined from the Santa Barbara
+# Corpus of Spoken American English with `tools/mine_markers.py`: 60
+# recorded face-to-face conversations, 62,433 intonation units, 22,278
+# moments where one person stopped and another started. A speaker then
+# struck the words that were not turn-taking cues.
+#
+# That review mattered more than the counting did. `amen`, `tiger`, `horse`
+# and `dollars` all scored high simply because these particular
+# conversations were about those things, and frequency cannot tell a
+# discourse marker from a noun that turns happened to land on.
+#
+# Quotative storytelling was cut by the same judgement. `said`, `says` and
+# `goes` top the continuation list on raw numbers -- "and he goes, ..." --
+# but that is a narrative habit rather than a turn-taking signal, and a pack
+# that holds the floor every time somebody quotes another person would be
+# wrong in exactly the situations where people talk longest.
+#
+# ## How the weights were set
+#
+# From measured lift over the base rate, not by feel, and not from the raw
+# percentage either. Only 35.7% of utterances here end a turn at all, so a
+# word at 53% is not a coin flip -- it is 1.5x chance. Each weight is the
+# share of available headroom above chance,
+#
+#     (observed ratio - base rate) / (1 - base rate)
+#
+# which is 0 for a word no better than chance and 1 for one that always ends
+# a turn. `guard.py` treats weight as decision strength rather than a
+# probability, so that is the right shape. The comment on each line carries
+# the counts it came from, so every number here can be checked.
+#
+# ## What this is not
+#
+# Validated. `labelled_turns` is 0 because no English conversation has been
+# labelled and scored against this pack yet. The markers are measured; the
+# claim that acting on them improves turn-taking is still untested, which is
+# why status is `experimental`.
+#
+# The corpus is American. Backchannels travel reasonably well across
+# Englishes, but `hunh` and `unhunh` are regionally marked, and a speaker of
+# Indian or Kenyan English should expect to correct this file rather than
+# inherit it. Corrections are worth more than additions here.
+
+code: en
+name: English
+status: experimental
+maintainer: ""
+
+tonal: false
+tonal_extra_ms: 0
+
+# Deliberately empty. This pack is the fallback for every English locale
+# without one of its own, so it cannot assume a region or a contact
+# language. en-NG names its own.
+region_hint: []
+commonly_switches_with: []
+
+# Speaker has MORE to say. Lowers p(end of turn).
+#
+# Phrases come first in spirit as well as in effect: the marker index
+# matches longest-first, so "you know" is preferred over the bare "know",
+# which is the right outcome. The bare words `know` and `mean` are
+# deliberately absent -- what speakers actually say is "you know" and "I
+# mean", and the phrase is both more frequent and less ambiguous than its
+# last word.
+continuation_markers:
+  - {text: "you see", weight: 0.84}       # mid 34, final 2, 94%
+  - {text: "and so", weight: 0.83}        # mid 31, final 2, 94%
+  # Filler attached to a connective. Stronger than either part alone, and
+  # the clearest "I have not finished" signal English has.
+  - {text: "but uh", weight: 0.63}        # mid 46, final 7, 87%
+  - {text: "and um", weight: 0.56}        # mid 43, final 8, 84%
+  - {text: "and then", weight: 0.52}      # mid 117, final 24, 83%
+  - {text: "because", weight: 0.52}       # mid 117, final 24, 83%
+  - {text: "like", weight: 0.52}          # mid 577, final 119, 83%
+  - {text: "you know", weight: 0.50}      # mid 996, final 217, 82%
+  - {text: "and uh", weight: 0.50}        # mid 143, final 31, 82%
+  # Hesitation sounds. A thought still being assembled.
+  - {text: "um", weight: 0.52}            # mid 677, final 139, 83%
+  - {text: "uh", weight: 0.52}            # mid 1102, final 229, 83%
+
+# Speaker is DONE and inviting a reply. Raises p(end of turn).
+#
+# The backchannels at the top are the strongest signal in the corpus by a
+# wide margin, and they are also the cheapest to act on: a caller who says
+# only "mhm" has handed the floor back and is waiting.
+yield_markers:
+  - {text: "mhm", weight: 0.77}           # final 804, mid 138, 85%
+  - {text: "hunh", weight: 0.75}          # final 120, mid 23, 84%
+  - {text: "unhunh", weight: 0.72}        # final 173, mid 38, 82%
+  - {text: "hm", weight: 0.70}            # final 235, mid 57, 80%
+  - {text: "i see", weight: 0.62}         # final 31, mid 10, 76%
+  - {text: "mm", weight: 0.60}            # final 216, mid 74, 74%
+
+# Measured, real, and deliberately NOT included, because every one falls
+# under the 0.5 the validator warns at -- "it fires often enough to matter
+# and is wrong often enough to hurt". They are recorded here so the evidence
+# is not lost, and so anyone who later labels English conversation can test
+# whether including them helps rather than re-mining from scratch.
+#
+#   continuation   i mean 0.43 (mid 209, final 53)    and  0.46 (734/175)
+#                  well   0.41 (454/121)              then 0.39 (219/61)
+#                  if     0.40 (37/10)                cause 0.33 (38/12)
+#   yield          wow    0.49 (final 70, mid 34)     yep  0.41 (26/16)
+#                  great  0.38 (65/43)                sure 0.34 (63/47)
+#                  good   0.33 (146/111)              really 0.30 (114/93)
+#                  thats right 0.36 (51/36)
+#
+# The pattern in that list is worth naming. Continuation markers are scored
+# against a base rate of 64% -- most utterances do continue -- so a word
+# needs 82% just to reach 0.5, and ordinary connectives like "and" and
+# "well" cannot. That is a finding, not an accident of the formula: outside
+# fillers and fixed phrases, English marks "I am still going" weakly, and
+# leans on prosody instead. Which is exactly the signal a text-only guard
+# cannot see.
+
+# Position-dependent. Counted only as the final token of a finalised
+# transcript, and halved again by the guard even then.
+#
+# These are the four highest-count acknowledgement tokens in the corpus and
+# the four least decisive: all sit within a few points of each other, barely
+# above chance. "Yeah" ends a turn 53% of the time and continues one 47% of
+# the time, which is precisely what `ambiguous_markers` exists for. Treating
+# them as yields would cut people off mid-sentence constantly, since the
+# same word opens a continuation just as readily.
+ambiguous_markers:
+  - {text: "right", weight: 0.34, note: "tag question vs 'right, so ...'"}
+  - {text: "okay", weight: 0.27, note: "acknowledgement vs 'okay so ...'"}
+  - {text: "yeah", weight: 0.26, note: "1182 final vs 1062 mid -- near even"}
+  - {text: "yes", weight: 0.23, note: "terminal only"}
+
+fillers: ["um", "uh", "hm", "mm"]
+
+thresholds:
+  unlikely_threshold: null   # null = inherit the framework default
+  min_delay_ms: null
+  max_delay_ms: null
+
+validation:
+  labelled_turns: 0
+  dataset_note: >-
+    Markers mined from the Santa Barbara Corpus of Spoken American English
+    (Du Bois, Chafe, Meyer, Thompson & Englebretson, 2000-2005), CC BY-ND
+    3.0 US, via tools/mine_markers.py over 60 conversations and 22,278 turn
+    boundaries. Weights are measured lift over a 35.7% base rate. No English
+    conversation has been labelled and scored against this pack yet, so the
+    markers are evidence and the pack is not validated.

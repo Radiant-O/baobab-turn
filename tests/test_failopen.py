@@ -246,12 +246,21 @@ def test_unparseable_yaml_is_skipped(tmp_path, monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
-    "code", [None, "", "   ", "und", "auto", "multi", "xx-YY", "!!", "en-NG-x-private"]
+    "code", [None, "", "   ", "und", "auto", "multi", "xx-YY", "!!"]
 )
 def test_unknown_language_resolves_to_nothing(code: str | None) -> None:
     """Returning None puts the guard on the null-pack path, where the inner
     decision passes through untouched."""
     assert registry.resolve(code) is None
+
+
+def test_a_private_use_subtag_still_finds_its_locale() -> None:
+    """`en-NG-x-private` was listed as unknown until an `en` pack existed to
+    catch it falling past `en-NG`. It is not unknown -- it is Nigerian
+    English with a private subtag attached, and resolving it to the generic
+    pack would quietly drop every marker written for that caller."""
+    pack = registry.resolve("en-NG-x-private")
+    assert pack is not None and pack.code == "en-NG"
 
 
 def test_exact_code_wins() -> None:

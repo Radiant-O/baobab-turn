@@ -143,9 +143,16 @@ def available_packs() -> dict[str, LanguagePack]:
 def resolve(language: str | None, *, allow_community: bool = False) -> LanguagePack | None:
     """Find the pack for a language code.
 
-    Resolution order is exact code, then base code, then nothing:
-    `en-NG` -> `en-NG`; `en-US` -> `en` if such a pack exists; otherwise None,
+    Resolution walks the subtags from most to least specific, so the most
+    specific pack always wins: `en-NG` -> `en-NG`; `en-US` -> `en` if such a
+    pack exists; `en-NG-x-private` -> `en-NG`, not `en`. Otherwise None,
     which the guard treats as the null pack.
+
+    Walking every prefix rather than only the base code matters as soon as
+    a base-code pack exists. With `en` present, a two-step lookup sends
+    `en-NG-x-private` straight past the Nigerian pack to the generic one,
+    quietly losing every marker written for that caller -- and the more
+    locales gain packs, the more tags that silently mis-resolve.
 
     Returns None rather than raising, and never returns a community pack
     unless `allow_community` is set -- community packs are written by native
@@ -159,7 +166,9 @@ def resolve(language: str | None, *, allow_community: bool = False) -> LanguageP
     if not code or code.lower() in {"und", "auto", "multi"}:
         return None
 
-    for candidate in (code, code.split("-")[0]):
+    parts = code.split("-")
+    for width in range(len(parts), 0, -1):
+        candidate = "-".join(parts[:width])
         pack = packs.get(candidate)
         if pack is None:
             continue

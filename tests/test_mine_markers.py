@@ -266,19 +266,21 @@ def test_unintelligible_speech_is_dropped() -> None:
 
 def test_an_x_ray_is_not_unintelligible_speech() -> None:
     """Three in the real release. The unintelligible mark is a standalone
-    run of X, so a hyphen is what tells the two apart.
-
-    The hyphen still splits the word, as it does for every hyphenated word
-    here. What matters is that the `x` survives as a spoken thing rather
-    than being deleted as noise.
-    """
-    assert tokenise_sbcsae(clean_sbcsae("an X-ray,")) == ["an", "x", "ray"]
+    run of X, so a hyphen is what tells the two apart -- and because the
+    hyphen is kept, the word stays whole."""
+    assert tokenise_sbcsae(clean_sbcsae("an X-ray,")) == ["an", "x-ray"]
     assert tokenise_sbcsae(clean_sbcsae("deteriorating on X-ray")) == [
         "deteriorating",
         "on",
-        "x",
-        "ray",
+        "x-ray",
     ]
+
+
+def test_a_reduplicated_vocalisation_stays_one_word() -> None:
+    """`hm-m` split into `hm` + `m`, and the stray `m` reached the candidate
+    list 29 times looking like a word somebody said."""
+    assert tokenise_sbcsae(clean_sbcsae("Hm-m,")) == ["hm-m"]
+    assert "m" not in tokenise_sbcsae(clean_sbcsae("Hm-m."))
 
 
 def test_a_cut_off_word_is_not_a_word() -> None:
