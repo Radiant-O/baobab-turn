@@ -44,6 +44,13 @@ pipecat = ["pipecat-ai>=1.15.0; python_version>='3.11'"]
 all = ["baobab-turn[livekit,pipecat,prosody]"]
 dev = [
   "pytest>=8.0",
+  # The wheel step of scripts/check.py shells out to `python -m build`, and
+  # its absence does not look like a missing tool -- the step prints
+  # "FAILED (build)", which reads like a packaging fault in this project.
+  # It was failing that way on a clean checkout, so the gate was running
+  # three checks out of four and the one it skipped is the one that exists
+  # because the package was unbuildable for weeks and nothing noticed.
+  "build>=1.0",
   "pytest-asyncio>=0.24",
   "pytest-cov",
   "ruff",

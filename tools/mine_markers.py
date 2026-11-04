@@ -342,6 +342,68 @@ def tokenise_sbcsae(text: str) -> list[str]:
     return out
 
 
+def sbcsae_lines(path: str):
+    """Yield `(speaker, start, end, words)` per intonation unit.
+
+    Separate from `parse_sbcsae` because the timings are worth something on
+    their own. This corpus marks the start and end of every intonation unit
+    against the audio, which makes it the only source here that can say how
+    long the silence between two speakers actually was -- the quantity this
+    whole project is arguing about.
+    """
+    speaker: str | None = None
+    unknown_runs = 0
+    in_unknown_run = False
+    for line in read_text(path).splitlines():
+        match = TRN_RE.match(line)
+        if match is None:
+            continue
+        rest = match.group(3).replace("\t", " ")
+        label = TRN_SPEAKER_RE.match(rest)
+        if label is not None:
+            speaker = label.group(1)
+            rest = rest[label.end():]
+        if speaker is None or is_sound(speaker):
+            continue
+        if is_unidentified(speaker):
+            if not in_unknown_run:
+                unknown_runs += 1
+                in_unknown_run = True
+            who = f"?{unknown_runs}"
+        else:
+            in_unknown_run = False
+            who = normalise_label(speaker)
+        words = tokenise_sbcsae(clean_sbcsae(rest))
+        if words:
+            yield who, float(match.group(1)), float(match.group(2)), words
+
+
+def turn_gaps(files: list[str]) -> list[float]:
+    """Seconds between one speaker finishing and the next starting.
+
+    Negative means they overlapped: the next speaker began before the
+    current one stopped.
+
+    Measured only at a real speaker change, and only between the *last*
+    intonation unit of one speaker and the *first* of the next, because a
+    gap inside somebody's own turn is a pause rather than a transition.
+    """
+    gaps: list[float] = []
+    for path in files:
+        previous_speaker: str | None = None
+        previous_end: float | None = None
+        for speaker, start, end, _words in sbcsae_lines(path):
+            if (
+                previous_speaker is not None
+                and speaker != previous_speaker
+                and previous_end is not None
+            ):
+                gaps.append(start - previous_end)
+            previous_speaker = speaker
+            previous_end = end
+    return gaps
+
+
 def parse_sbcsae(path: str) -> list[Utterance]:
     """One intonation unit per line, from the Santa Barbara Corpus.
 
@@ -421,6 +483,51 @@ def expand(paths: list[str]) -> list[str]:
     return unique
 
 
+def all_words(path: str) -> list[str]:
+    """Every word in a file, ignoring turn structure entirely.
+
+    Deliberately separate from `parse_any`. Profile words identify a
+    *language*, not a turn, so this drops the `# speaker_id` requirement
+    `parse_conllu` enforces -- the best-licensed corpus for a given language
+    is often a written one with no speakers in it at all.
+    """
+    if not path.lower().endswith(".conllu"):
+        return [w for utt in parse_any(path) for w in utt.words]
+
+    words: list[str] = []
+    for line in read_text(path).splitlines():
+        if not line or line.startswith("#") or "\t" not in line:
+            continue
+        cols = line.split("\t")
+        # Multi-word tokens are ranges like `1-2` and repeat their parts.
+        if len(cols) < 4 or "-" in cols[0] or "." in cols[0]:
+            continue
+        if cols[3] == "PUNCT":
+            continue
+        words.append(cols[1].lower())
+    return words
+
+
+def profile(files: list[str], size: int) -> list[tuple[str, int]]:
+    """The most frequent words in a corpus, as a language fingerprint.
+
+    Frequency is the right measure here and it is worth saying why, because
+    it is the wrong measure everywhere else in this file. A discourse marker
+    cannot be found by counting -- that is the whole argument of this tool.
+    But a *language* is identified exactly by its commonest function words:
+    `de`, `la`, `que` are Spanish in a way no amount of judgement improves
+    on, and they need no speaker's approval because they make no claim about
+    turn-taking.
+
+    The detector discards words shared with another profile, so overlap with
+    English costs nothing beyond the slot it occupies.
+    """
+    counts: collections.Counter[str] = collections.Counter()
+    for path in files:
+        counts.update(all_words(path))
+    return counts.most_common(size)
+
+
 def phrase_counts(files: list[str], length: int):
     """Turn-final versus mid-turn for the last `length` words of a unit.
 
@@ -489,6 +596,14 @@ def main() -> int:
                     help="ignore words seen fewer times in that position (default 5). "
                          "Low counts produce meaningless 100%% ratios.")
     ap.add_argument("--top", type=int, default=25)
+    ap.add_argument("--gaps", action="store_true",
+                    help="report the silence between turns, from the time "
+                         "marks. Only SBCSAE (.trn) carries them.")
+    ap.add_argument("--profile", type=int, default=0, metavar="N",
+                    help="emit the N most frequent words as a profile_words "
+                         "block and stop. Identifies a language for "
+                         "code-switch detection; says nothing about turns, "
+                         "so it needs no corpus with speakers in it.")
     ap.add_argument("--phrases", type=int, default=0, metavar="N",
                     help="also rank the last N words as a phrase, e.g. 2 for "
                          "'you know'. Repeatable meaning: 2 reports two-word "
@@ -501,6 +616,51 @@ def main() -> int:
     if not files:
         print("No .conllu or .txt files found.", file=sys.stderr)
         return 1
+
+    if args.gaps:
+        timed = [f for f in files if f.lower().endswith(".trn")]
+        if not timed:
+            print("No .trn files: only SBCSAE carries time marks.", file=sys.stderr)
+            return 1
+        gaps = sorted(turn_gaps(timed))
+        if not gaps:
+            print("No turn transitions found.", file=sys.stderr)
+            return 1
+
+        overlapped = sum(1 for g in gaps if g < 0)
+        instant = sum(1 for g in gaps if g == 0.0)
+        print(f"{len(timed)} files, {len(gaps):,} turn transitions")
+        print()
+        print("  percentile   gap (s)")
+        for q in (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95):
+            print(f"  p{int(q * 100):<10} {gaps[int(q * (len(gaps) - 1))]:+.3f}")
+        print()
+        print(f"  overlapped (next speaker started first)  "
+              f"{overlapped:,} ({overlapped / len(gaps):.0%})")
+        print(f"  latched exactly (gap of 0.000s)          "
+              f"{instant:,} ({instant / len(gaps):.0%})")
+        print()
+        print("A negative gap means the next speaker began before this one")
+        print("stopped. Read the exact zeros with care: a transcriber aligning")
+        print("one unit's start to the previous unit's end produces a 0.000")
+        print("that is a transcription convention, not a measured silence.")
+        return 0
+
+    if args.profile > 0:
+        rows = profile(files, args.profile)
+        total = sum(c for _, c in rows)
+        print(f"# {len(files)} files, {args.profile} most frequent words, "
+              f"{total:,} occurrences between them")
+        print("#")
+        print("# A language fingerprint for code-switch detection. These make")
+        print("# no claim about turn-taking, so unlike markers they need no")
+        print("# speaker to approve them -- a language really is identified")
+        print("# by its commonest function words. Words shared with another")
+        print("# pack's profile are discarded by the detector at load time.")
+        print("profile_words:")
+        for word, count in rows:
+            print(f"  - {word}".ljust(26) + f"# {count:,}")
+        return 0
 
     turn_final: collections.Counter[str] = collections.Counter()
     mid_turn: collections.Counter[str] = collections.Counter()

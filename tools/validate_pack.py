@@ -39,6 +39,16 @@ _WEAK_WEIGHT = 0.5
 #: Fewer than this and code-switch detection has too little to work with.
 _THIN_PROFILE = 10
 
+#: YAML 1.1 reads these bare words as booleans, not strings.
+#:
+#: This bites in the worst possible way: the pack still loads, the list
+#: still looks populated, and the real word is replaced by "true" or
+#: "false". Spanish `no` and Polish `nie`-adjacent spellings, English `yes`,
+#: Turkish `on` ("ten") and `off` are all ordinary vocabulary in some
+#: language, so the trap is waiting for exactly the contributors this
+#: project wants. Quoting the entry fixes it.
+_YAML_BOOLS = {"true", "false"}
+
 
 def _marker_lists(pack: LanguagePack) -> list[tuple[str, tuple[Marker, ...]]]:
     return [
@@ -93,8 +103,23 @@ def check(path: Path) -> tuple[list[str], list[str]]:
                     "below 0.5 it is probably not worth including"
                 )
 
-    if total == 0:
+    if total == 0 and not pack.profile_words:
         errors.append("no markers at all: this pack would do nothing")
+    elif total == 0:
+        # A profile-only pack. It cannot judge a turn, but it can tell the
+        # code-switch detector that the speaker has moved into this
+        # language, and a detected switch buys patience on its own. That is
+        # a real contribution and a cheap one: profile words are the
+        # commonest function words, so they can be mined for any language
+        # with a corpus, whereas markers need a speaker.
+        #
+        # Allowing this is what lets the project reach a language before
+        # anybody who speaks it has arrived.
+        warnings.append(
+            "profile only -- no markers, so this pack cannot judge a turn. "
+            "It can still tell the detector a speaker switched into this "
+            "language, which buys patience on its own."
+        )
 
     # Shared words are discarded as indiscriminate, so a profile made only
     # of them detects nothing while looking populated.
@@ -104,6 +129,14 @@ def check(path: Path) -> tuple[list[str], list[str]]:
         if code != pack.code
         for w in other.profile_words
     }
+    for word in pack.profile_words:
+        if normalise(word) in _YAML_BOOLS:
+            errors.append(
+                f"profile_words contains {word!r}, which is almost certainly "
+                "an unquoted `yes`/`no`/`on`/`off` that YAML read as a "
+                "boolean. Quote it to keep the real word."
+            )
+
     distinctive = [w for w in pack.profile_words if normalise(w) not in others]
     if not pack.profile_words:
         warnings.append(

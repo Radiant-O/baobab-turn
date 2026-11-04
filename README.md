@@ -287,13 +287,43 @@ validation:
 
 ### Shipped packs
 
-| Pack | Language | Status | Labelled turns |
-|---|---|---|---|
-| `en-NG` | Nigerian English | `experimental` | **0** |
-| `pcm` | Nigerian Pidgin | `experimental` | **0** |
+| Pack | Language | Markers from | Status | Labelled turns |
+|---|---|---|---|---|
+| `en` | English | corpus (SBCSAE) | `experimental` | **0** |
+| `en-NG` | Nigerian English | a speaker | `experimental` | **0** |
+| `pcm` | Nigerian Pidgin | a speaker | `experimental` | **0** |
+| `es` | Spanish | *none — profile only* | `experimental` | **0** |
+| `hi` | Hindi | *none — profile only* | `experimental` | **0** |
 
-Both marker lists are first drafts. The weights are informed guesses, not
-measurements, and the `labelled_turns: 0` is displayed rather than hidden.
+`en` is the fallback for every English locale without a pack of its own —
+`en-GB`, `en-IN`, `en-KE`, `en-AU` all resolve to it, while `en-NG` still
+wins on exact match. Its markers were counted from 60 recorded
+conversations in the [Santa Barbara Corpus][sbcsae] and then cut by a
+speaker, and its weights are measured lift over the 35.7% base rate rather
+than judgement. Each entry carries the counts it came from.
+
+`en-NG` and `pcm` are first drafts in the other direction: a speaker wrote
+them and the weights are informed guesses.
+
+`es` and `hi` carry **no markers at all**, and that is the honest shape
+rather than an unfinished one: nobody who speaks Spanish or Hindi has
+worked on this, and writing their discourse markers from a machine's guess
+is the one thing this repo forbids. What they do carry is `profile_words` —
+the commonest function words, mined from a treebank — which is enough for
+the code-switch detector to notice a speaker moving *into* that language. A
+detected switch buys patience on its own, so the pack helps a bilingual
+caller even though it can judge no Spanish or Hindi turn.
+
+That distinction is the cheap half of reaching a new language. A profile
+needs only a corpus; markers need a speaker. `hi` is Devanagari only —
+romanised Hinglish matches none of it, and the pack says so.
+
+None of these is validated. `labelled_turns: 0` means no conversation has
+been labelled and scored against that pack, and the field is displayed
+rather than hidden. Measured markers are evidence; that acting on them
+improves turn-taking is still a hypothesis.
+
+[sbcsae]: https://www.linguistics.ucsb.edu/research/santa-barbara-corpus-spoken-american-english
 
 ### Validation tiers
 
@@ -378,20 +408,26 @@ flowchart TB
     end
 
     subgraph packs["baobab_turn/packs — data only"]
+        Y0["en.yaml"]
         Y1["en-NG.yaml"]
         Y2["pcm.yaml"]
+        Y3["es.yaml, hi.yaml<br/><i>profile only</i>"]
         R["registry.py"]
     end
 
     subgraph adapters["baobab_turn/adapters — thin framework glue"]
         LK["livekit.py"]
-        PC["pipecat.py<br/><i>planned</i>"]
+        PC["pipecat.py"]
+        CH["chat.py"]
+        UV["ultravox.py<br/><i>config only</i>"]
     end
 
     packs --> core
     core --> adapters
     LK --> LIVEKIT["LiveKit AgentSession"]
-    PC -.-> PIPECAT["Pipecat pipeline"]
+    PC --> PIPECAT["Pipecat pipeline"]
+    CH --> CHAT["text chat"]
+    UV -.-> ULTRAVOX["Ultravox vadSettings"]
 
     style core fill:#1b4332,color:#fff
     style packs fill:#40916c,color:#fff

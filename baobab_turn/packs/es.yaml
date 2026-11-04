@@ -1,0 +1,93 @@
+# Spanish -- a profile-only pack.
+#
+# ## What this is and is not
+#
+# There are no markers here, and that is the honest state of things rather
+# than an omission. Nobody who speaks Spanish has worked on this project,
+# and writing Spanish discourse markers from a machine's guess is exactly
+# what this repository forbids.
+#
+# What a pack can still do without them is tell the code-switch detector
+# that a speaker has moved into Spanish. A detected switch buys patience by
+# itself -- someone reaching for a word in their other language is mid-
+# thought, not finished -- so this pack is useful to an English or Pidgin
+# caller who code-switches, even though it can judge no Spanish turn.
+#
+# ## Why frequency is the right measure here, and nowhere else
+#
+# Counting cannot find a discourse marker; that is the central argument of
+# `tools/mine_markers.py`. But a *language* is identified precisely by its
+# commonest function words. `de`, `la` and `que` are Spanish in a way no
+# human judgement improves on, and they make no claim about turn-taking, so
+# they need no speaker's approval to be correct.
+#
+# Mined with `python tools/mine_markers.py <corpus> --profile 22` from
+# UD_Spanish-AnCora (CC BY 4.0), 206,498 occurrences across the 22 words.
+# The corpus is news rather than speech, which matters less than it would
+# for markers: function words are stable across register, while discourse
+# markers are not.
+#
+# The detector discards words shared with another pack's profile, so `a`,
+# `no` and `como` cost nothing but the slot. The rest are distinctive.
+#
+# ## What would improve this
+#
+# A Spanish speaker. `continuation_markers` and `yield_markers` are the
+# missing half, and no amount of corpus work substitutes for someone who
+# knows whether a word hands the floor over.
+
+code: es
+name: Spanish
+status: experimental
+maintainer: ""
+
+tonal: false
+tonal_extra_ms: 0
+
+region_hint: []
+# Spanish-English is among the most studied code-switching pairs there is.
+commonly_switches_with: [en]
+
+continuation_markers: []
+yield_markers: []
+ambiguous_markers: []
+fillers: []
+
+profile_words:
+  - de
+  - el
+  - la
+  - que
+  - en
+  - a
+  - y
+  - los
+  - se
+  - un
+  - las
+  - por
+  - con
+  - una
+  # Quoted because YAML reads a bare `no` as boolean false, which reaches
+  # the profile as the string "false" and silently drops the real word.
+  - "no"
+  - para
+  - su
+  - es
+  - ha
+  - lo
+  - como
+  - más
+
+thresholds:
+  unlikely_threshold: null
+  min_delay_ms: null
+  max_delay_ms: null
+
+validation:
+  labelled_turns: 0
+  dataset_note: >-
+    Profile words mined from UD_Spanish-AnCora (CC BY 4.0) with
+    tools/mine_markers.py --profile 22. No markers: this pack identifies
+    Spanish for code-switch detection and makes no turn-taking claim. A
+    Spanish speaker is needed for the rest.

@@ -30,6 +30,7 @@ from tools.mine_markers import (
     is_unidentified,
     parse_sbcsae,
     tokenise_sbcsae,
+    turn_gaps,
 )
 
 
@@ -355,6 +356,37 @@ def test_a_speaker_change_is_a_boundary_and_a_repeat_is_not(tmp_path: Path) -> N
     ]
     assert changes == ["works", "mhm"]
     assert holds == ["saying"]
+
+
+def test_gaps_are_measured_between_turns_not_inside_them(tmp_path: Path) -> None:
+    """A silence inside somebody's own turn is a pause, not a transition.
+    Counting it would make the corpus look full of gaps it does not have."""
+    path = write(
+        tmp_path,
+        "0.00 1.00\tADA:\tfirst thing\n"
+        "3.00 4.00\t    \tstill me after a long pause\n"   # 2.0s, inside a turn
+        "4.50 5.00\tBEN:\tmy turn now\n",                   # 0.5s, a transition
+    )
+    assert turn_gaps([path]) == pytest.approx([0.5])
+
+
+def test_a_negative_gap_is_an_overlap(tmp_path: Path) -> None:
+    """The next speaker started before this one stopped. 43% of transitions
+    in the real release look like this, which is the finding that makes a
+    "wait for silence" detector a poor fit for fluent conversation."""
+    path = write(
+        tmp_path,
+        "0.00 2.00\tADA:\ti was saying\n" "1.40 2.50\tBEN:\tyeah but\n",
+    )
+    assert turn_gaps([path]) == pytest.approx([-0.6])
+
+
+def test_gaps_do_not_run_across_two_files(tmp_path: Path) -> None:
+    """Two conversations are not one. A gap between the end of one
+    recording and the start of another is not a turn transition."""
+    a = write(tmp_path, "0.00 1.00\tADA:\thello\n" "1.20 2.00\tBEN:\thi\n", "a.trn")
+    b = write(tmp_path, "0.00 1.00\tCAT:\tdifferent\n" "9.00 9.50\tDAN:\troom\n", "b.trn")
+    assert turn_gaps([a, b]) == pytest.approx([0.2, 8.0])
 
 
 def test_a_line_with_no_words_left_is_not_an_utterance(tmp_path: Path) -> None:

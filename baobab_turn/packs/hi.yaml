@@ -1,0 +1,99 @@
+# Hindi -- a profile-only pack, and one with a script problem worth reading
+# before relying on it.
+#
+# ## The limitation first
+#
+# Every word below is Devanagari, so this pack identifies Hindi **only when
+# the transcript is in Devanagari**. A great deal of real Hindi-English
+# code-switching -- Hinglish -- is written and transcribed in Latin script,
+# and against `tum kya kar rahe ho` not one of these words matches. For
+# those callers this pack does nothing at all.
+#
+# Fixing that needs romanised Hindi conversation, which is exactly what
+# UD_Hindi_English-HIENCS is (CC BY-SA 4.0, genuinely code-switched). It
+# ships tweet IDs and a crawler rather than text, so the data must be
+# re-fetched from the Twitter API -- now paid, with many of the original
+# tweets deleted. It was checked and is not practically obtainable. A
+# separate `hi-Latn` pack is the right shape for the fix when a source
+# turns up.
+#
+# ## What this is
+#
+# No markers, which is the honest state rather than an omission: nobody who
+# speaks Hindi has worked on this project, and writing Hindi discourse
+# markers from a machine's guess is what this repository forbids.
+#
+# What it can still do is tell the code-switch detector a speaker has moved
+# into Hindi. A detected switch buys patience by itself, so this is useful
+# to an English caller who code-switches in Devanagari, even though it can
+# judge no Hindi turn.
+#
+# Mined with `python tools/mine_markers.py <corpus> --profile 22` from
+# UD_Hindi-PUD (CC BY-SA 3.0). That corpus is small -- 1,000 sentences,
+# 6,676 occurrences across these 22 words -- and it is news rather than
+# speech. Both matter less here than they would for markers: function words
+# are stable across register and converge quickly, which is why 22 of them
+# are enough to fingerprint a language.
+#
+# UD_Hindi-HDTB is the larger treebank and was rejected: CC BY-NC-SA, and a
+# non-commercial corpus has no place behind an MIT package.
+#
+# ## What would improve this
+#
+# A Hindi speaker, and a romanised source. In that order.
+
+code: hi
+name: Hindi
+status: experimental
+maintainer: ""
+
+tonal: false
+tonal_extra_ms: 0
+
+region_hint: []
+commonly_switches_with: [en]
+
+continuation_markers: []
+yield_markers: []
+ambiguous_markers: []
+fillers: []
+
+# Devanagari only. See the note at the top of this file: romanised Hinglish
+# will not match any of these.
+profile_words:
+  - के
+  - में
+  - है
+  - की
+  - और
+  - से
+  - को
+  - का
+  - ने
+  - एक
+  - कि
+  - पर
+  - हैं
+  - था
+  - किया
+  - लिए
+  - गया
+  - करने
+  - नहीं
+  - यह
+  - कर
+  - जो
+
+thresholds:
+  unlikely_threshold: null
+  min_delay_ms: null
+  max_delay_ms: null
+
+validation:
+  labelled_turns: 0
+  dataset_note: >-
+    Profile words mined from UD_Hindi-PUD (CC BY-SA 3.0) with
+    tools/mine_markers.py --profile 22. Devanagari only, so romanised
+    Hinglish will not match. No markers: this pack identifies Hindi for
+    code-switch detection and makes no turn-taking claim. A Hindi speaker
+    is needed for the rest.

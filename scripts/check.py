@@ -49,7 +49,7 @@ def check_wheel() -> bool:
             cwd=ROOT,
         )
         if built.returncode != 0:
-            print("  -> FAILED (build). If `build` is missing: pip install build")
+            print("  -> FAILED (build). If `build` is missing: pip install -e '.[dev]'")
             return False
 
         wheels = sorted((tmp / "dist").glob("*.whl"))
