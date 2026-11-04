@@ -26,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tools.mine_markers import (
     clean_sbcsae,
     expand,
-    is_speaker,
+    is_sound,
+    is_unidentified,
     parse_sbcsae,
     tokenise_sbcsae,
 )
@@ -93,17 +94,24 @@ def test_annotator_queries_are_not_speech(tmp_path: Path) -> None:
 # --- who counts as a speaker -------------------------------------------
 
 
-@pytest.mark.parametrize("label", [">ENV", ">DOG", ">RADIO", "ENV", "X", "X_2", "*X"])
-def test_sounds_and_unidentified_voices_are_not_speakers(label: str) -> None:
-    """A dog barking is not a turn, and two consecutive `X` lines may be two
-    different people -- counting a change between them would invent a
-    boundary nobody can verify."""
-    assert not is_speaker(label)
+@pytest.mark.parametrize("label", [">ENV", ">DOG", ">RADIO", "ENV"])
+def test_noise_is_not_a_turn(label: str) -> None:
+    """A dog barking does not end anybody's turn."""
+    assert is_sound(label)
+    assert not is_unidentified(label)
+
+
+@pytest.mark.parametrize("label", ["X", "X_2", "*X"])
+def test_an_unidentified_voice_is_a_speaker_we_cannot_name(label: str) -> None:
+    """Different from noise: somebody really did speak."""
+    assert is_unidentified(label)
+    assert not is_sound(label)
 
 
 @pytest.mark.parametrize("label", ["ADA", "#READ", "MANY", "AUD_2", "NORA?", "TOM_1"])
 def test_real_speakers_including_the_awkward_ones(label: str) -> None:
-    assert is_speaker(label)
+    assert not is_sound(label)
+    assert not is_unidentified(label)
 
 
 def test_a_non_speaker_takes_its_continuation_lines_with_it(tmp_path: Path) -> None:
@@ -125,6 +133,81 @@ def test_a_non_speaker_takes_its_continuation_lines_with_it(tmp_path: Path) -> N
 def test_an_uncertain_attribution_keeps_the_speaker(tmp_path: Path) -> None:
     utts = parse_sbcsae(write(tmp_path, "0.00 1.00\tNORA?:\tmaybe so\n"))
     assert utts[0].speaker == "NORA"
+
+
+def test_an_unidentified_voice_does_not_bridge_two_turns(tmp_path: Path) -> None:
+    """Dropping the unknown line would make ADA adjacent to ADA, so `yes`
+    would read as "kept the floor" when she actually yielded and took it
+    back. 27 lines in the real release sit exactly here."""
+    utts = parse_sbcsae(
+        write(
+            tmp_path,
+            "0.00 1.00\tADA:\tyes\n"
+            "1.00 2.00\tX:\tno\n"
+            "2.00 3.00\tADA:\tright\n",
+        )
+    )
+    assert [u.speaker for u in utts] == ["ADA", "?1", "ADA"]
+
+
+def test_one_run_of_unknown_lines_is_one_unknown_speaker(tmp_path: Path) -> None:
+    """Two consecutive unidentified lines may be two different people, so a
+    boundary between them would be invented. A run is treated as one turn."""
+    utts = parse_sbcsae(
+        write(
+            tmp_path,
+            "0.00 1.00\tADA:\tgo on\n"
+            "1.00 2.00\tX:\twell\n"
+            "2.00 3.00\tX_2:\tmaybe\n"
+            "3.00 4.00\tADA:\tfine\n"
+            "4.00 5.00\tX:\tagain\n",
+        )
+    )
+    assert [u.speaker for u in utts] == ["ADA", "?1", "?1", "ADA", "?2"]
+
+
+def test_noise_does_not_interrupt_an_unknown_run(tmp_path: Path) -> None:
+    """Noise is not a turn, so it cannot split one unknown speaker into
+    two."""
+    utts = parse_sbcsae(
+        write(
+            tmp_path,
+            "0.00 1.00\tX:\tsomething\n"
+            "1.00 2.00\t>ENV:\t((DOOR))\n"
+            "2.00 3.00\tX:\tand more\n",
+        )
+    )
+    assert [u.speaker for u in utts] == ["?1", "?1"]
+
+
+def test_an_indented_label_is_still_a_label(tmp_path: Path) -> None:
+    """Four labels in the real release carry a leading space. Reading one as
+    a continuation would weld two people's turns into one."""
+    utts = parse_sbcsae(
+        write(
+            tmp_path,
+            "0.00 1.00\tADA:\tgo on\n" "1.00 2.00\t BRETT:\texcuse me\n",
+        )
+    )
+    assert [u.speaker for u in utts] == ["ADA", "BRETT"]
+
+
+def test_a_mixed_case_label_is_still_a_label(tmp_path: Path) -> None:
+    """`Doris:`, `Mary:` and `Steven:` appear in mixed case."""
+    utts = parse_sbcsae(write(tmp_path, "0.00 1.00\tDoris:\tyeah\n"))
+    assert utts[0].speaker == "DORIS"
+
+
+def test_a_long_label_is_not_silently_demoted(tmp_path: Path) -> None:
+    """The failure mode is quiet: an unmatched label reads as a continuation
+    of whoever spoke last, merging two people."""
+    utts = parse_sbcsae(
+        write(
+            tmp_path,
+            "0.00 1.00\tADA:\thello\n" "1.00 2.00\tCHRISTOPHERS:\thi\n",
+        )
+    )
+    assert [u.speaker for u in utts] == ["ADA", "CHRISTOPHERS"]
 
 
 # --- transcription conventions -----------------------------------------
@@ -179,6 +262,23 @@ def test_unintelligible_speech_is_dropped() -> None:
         "green",
     ]
     assert tokenise_sbcsae(clean_sbcsae("XX XXX XXXXX")) == []
+
+
+def test_an_x_ray_is_not_unintelligible_speech() -> None:
+    """Three in the real release. The unintelligible mark is a standalone
+    run of X, so a hyphen is what tells the two apart.
+
+    The hyphen still splits the word, as it does for every hyphenated word
+    here. What matters is that the `x` survives as a spoken thing rather
+    than being deleted as noise.
+    """
+    assert tokenise_sbcsae(clean_sbcsae("an X-ray,")) == ["an", "x", "ray"]
+    assert tokenise_sbcsae(clean_sbcsae("deteriorating on X-ray")) == [
+        "deteriorating",
+        "on",
+        "x",
+        "ray",
+    ]
 
 
 def test_a_cut_off_word_is_not_a_word() -> None:

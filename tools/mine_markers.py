@@ -219,15 +219,37 @@ TRN_RE = re.compile(r"^(\d+\.\d+)\s+(\d+\.\d+)\t(.*)$")
 #: the next intonation unit. That is the single most valuable thing this
 #: corpus records for us: it is the within-turn structure that makes the
 #: turn-final versus mid-turn contrast measurable at all.
-TRN_SPEAKER_RE = re.compile(r"^\s*([A-Za-z#>*][A-Za-z0-9_/?>*]{0,11})\s*:\s")
-
-#: Labels that are not a person taking a turn.
 #:
-#: `>ENV`, `>DOG` and `>RADIO` are environmental sound -- a dog barking is
-#: not a turn. `X` is an unidentified voice, and two consecutive `X` lines
-#: may be two different people, so counting a speaker change between them
-#: would invent a turn boundary that nobody can verify.
-NON_SPEAKER_RE = re.compile(r"^(>.*|ENV|\*?X(_\d+)?)$")
+#: The leading `\s*` is deliberate and was nearly removed. Anchoring the
+#: label hard against the column start would rule out matching prose that
+#: merely contains a colon -- but four real labels in this release are
+#: indented (` BRETT:`, ` LINDA:`, ` WOOD:`), and demoting those to
+#: continuations would silently weld two people's turns together. A
+#: mid-speech `Word:` appears nowhere in the 68,752 parsed lines, so the
+#: permissive form is the one that matches the data.
+#:
+#: The length bound is 14 against a longest observed label of 9. Overrunning
+#: it does not fail loudly -- the line reads as a continuation of whoever
+#: spoke last -- so the margin is cheap insurance.
+TRN_SPEAKER_RE = re.compile(r"^\s*([A-Za-z#>*][A-Za-z0-9_/?>*]{0,14})\s*:\s")
+
+#: Sound rather than speech. A door slamming does not end anybody's turn, so
+#: these are dropped, and so are the blank-column lines continuing them.
+SOUND_RE = re.compile(r"^(>.*|ENV)$")
+
+#: An unidentified voice. Somebody spoke; the transcriber could not say who.
+#: The identity is unknown, the speaker *change* is not.
+#:
+#: These must not simply be dropped. Deleting one makes the lines either
+#: side adjacent, and where those are the same person the comparison reads
+#: as "they kept the floor" when really they yielded it and took it back --
+#: 27 such bridges in this release. They cannot be pooled into one speaker
+#: either, since two unidentified lines may be two different people.
+#:
+#: So each *contiguous run* becomes its own anonymous speaker: one turn by
+#: one unknown person, which invents no boundary inside the run and keeps
+#: the two real ones around it.
+UNIDENTIFIED_RE = re.compile(r"^\*?X(_\d+)?$")
 
 #: Everything SBCSAE marks that is not a word. Without this the tokeniser
 #: produces nonsense that ranks high enough to crowd out the real
@@ -236,7 +258,10 @@ NON_SPEAKER_RE = re.compile(r"^(>.*|ENV|\*?X(_\d+)?)$")
 SBC_COMMENT = re.compile(r"\(\([^)]*\)\)")              # ((AIR_CONDITIONER))
 SBC_VOCAL = re.compile(r"\([A-Za-z_]+\)")               # (H) (Hx) (TSK)
 SBC_ANGLE = re.compile(r"<[A-Z_0-9]+\b|\b[A-Z_0-9]+>")  # <READ ... READ>
-SBC_UNCLEAR = re.compile(r"\bX+\b", re.IGNORECASE)      # XX, XXXX: unintelligible
+#: Unintelligible speech, any run length -- `XX`, `XXXX`. The hyphen guard
+#: keeps the three `X-ray`s in the release from being read as unintelligible
+#: and losing their X.
+SBC_UNCLEAR = re.compile(r"(?<!-)\bX+\b(?!-)", re.IGNORECASE)
 
 #: Overlap brackets, with the index that pairs them: `[2 ... 2]`.
 #:
@@ -260,9 +285,19 @@ SBC_INTRAWORD = re.compile(r"[=%~!^&]")
 SBC_SEPARATOR = re.compile(r"[@+…—]")
 
 
-def is_speaker(label: str) -> bool:
-    """Is this label a person whose turn we can count?"""
-    return NON_SPEAKER_RE.match(label.strip().rstrip("?").upper()) is None
+def normalise_label(label: str) -> str:
+    """`NORA?` and `Doris` are the same shape of thing as `ADA`."""
+    return label.strip().rstrip("?").upper()
+
+
+def is_sound(label: str) -> bool:
+    """Environmental noise, which is not a turn by anybody."""
+    return SOUND_RE.match(normalise_label(label)) is not None
+
+
+def is_unidentified(label: str) -> bool:
+    """Somebody spoke, but the transcriber could not say who."""
+    return UNIDENTIFIED_RE.match(normalise_label(label)) is not None
 
 
 def clean_sbcsae(text: str) -> str:
@@ -307,6 +342,8 @@ def parse_sbcsae(path: str) -> list[Utterance]:
     """
     out: list[Utterance] = []
     speaker: str | None = None
+    unknown_runs = 0
+    in_unknown_run = False
     for line in read_text(path).splitlines():
         match = TRN_RE.match(line)
         if match is None:
@@ -318,13 +355,24 @@ def parse_sbcsae(path: str) -> list[Utterance]:
         if label is not None:
             speaker = label.group(1)
             rest = rest[label.end():]
-        if speaker is None or not is_speaker(speaker):
-            # A blank column inherits the line above, so dropping a
-            # non-speaker also drops the lines that continue it.
+        if speaker is None:
             continue
+        if is_sound(speaker):
+            # A blank column inherits the line above, so dropping the
+            # environment also drops the lines continuing it. Noise does not
+            # interrupt a turn, so it does not break an unknown run either.
+            continue
+        if is_unidentified(speaker):
+            if not in_unknown_run:
+                unknown_runs += 1
+                in_unknown_run = True
+            who = f"?{unknown_runs}"
+        else:
+            in_unknown_run = False
+            who = normalise_label(speaker)
         words = tokenise_sbcsae(clean_sbcsae(rest))
         if words:
-            out.append(Utterance(speaker.rstrip("?").upper(), words, []))
+            out.append(Utterance(who, words, []))
     return out
 
 
