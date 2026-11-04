@@ -35,19 +35,38 @@ exactly the judgement frequency cannot make.
 
 ## Why no corpus ships with this package
 
-The treebanks worth mining are CC BY-SA 4.0 -- share-alike. Vendoring one
-into an MIT package would drag that obligation along with it. So the tool
-ships and the data does not: point it at your own copy. Known usable corpora,
-all CC BY-SA 4.0, all genre `spoken`, all with `speaker_id`:
+Every corpus worth mining carries a licence that vendoring would drag into
+an MIT package: the treebanks are CC BY-SA 4.0 (share-alike) and SBCSAE is
+CC BY-ND 3.0 US (no derivative works). So the tool ships and the data does
+not: point it at your own copy.
+
+Known usable corpora, all genre `spoken`, all with real speaker turns:
 
 - **Naija (Nigerian Pidgin)** -- UD_Naija-NSC, 9,242 sentences / 140,729
-  tokens. github.com/UniversalDependencies/UD_Naija-NSC
-- **Hausa (Southern)** -- SUD_Hausa-SouthernAutogramm, broadcast conversation.
+  tokens, CC BY-SA 4.0.
+  github.com/UniversalDependencies/UD_Naija-NSC
+- **Hausa (Southern)** -- SUD_Hausa-SouthernAutogramm, broadcast
+  conversation, CC BY-SA 4.0.
   github.com/surfacesyntacticud/SUD_Hausa-SouthernAutogramm
 - **Hausa (Northern, Ader)** -- SUD_Hausa-NorthernAutogramm, 400 sentences.
+- **American English** -- SBCSAE, 60 face-to-face conversations, ~249k
+  tokens, CC BY-ND 3.0 US. Transcripts alone are a 1.2MB download:
+  linguistics.ucsb.edu/sites/default/files/sitefiles/research/SBC/SBCorpus.zip
 
-Attribute whatever you use. If you publish weights derived from a CC BY-SA
-corpus, say which corpus and cite it.
+No-derivatives deserves a word, since it sounds more restrictive than it is
+here. ND restricts *distributing a modified copy* of the corpus. Reading it
+and publishing counts derived from it is ordinary analysis, and this tool
+never writes the corpus back out -- but it does mean an SBCSAE-derived pack
+must cite the corpus and must not ship any of its text.
+
+## Formats it reads
+
+- `.conllu` -- UD/SUD treebanks, speakers from `# speaker_id`.
+- `.trn` -- SBCSAE, speakers from the transcript's own speaker column.
+- anything else -- a plain `SPEAKERn: text` transcript, one turn per line.
+
+Attribute whatever you use. If you publish weights derived from a corpus,
+say which corpus and cite it.
 """
 
 from __future__ import annotations
@@ -168,14 +187,153 @@ def parse_transcript(path: str) -> list[Utterance]:
     return out
 
 
+TOKEN_RE = re.compile(r"[0-9a-zÀ-ɏ']+")
+
+
 def tokenise(text: str) -> list[str]:
     """Lowercase words, punctuation dropped, apostrophes kept inside words."""
-    return re.findall(r"[0-9a-zÀ-ɏ']+", text.lower())
+    return TOKEN_RE.findall(text.lower())
+
+
+# --- SBCSAE -------------------------------------------------------------
+#
+# The Santa Barbara Corpus is the only openly-licensed English conversational
+# corpus found that records turn structure. The CC BY-SA treebanks do not:
+# UD_English-GUM is non-commercial, and UD_English-CHILDES and
+# UD_English-ESLSpok drop speaker turns in conversion, which is why this
+# needs a reader of its own rather than another `# speaker_id` corpus.
+
+#: "START END<TAB>SPEAKER:<TAB>TEXT".
+#:
+#: The two time marks are separated by a space in the early files and a tab
+#: in the later ones, so both are accepted. Requiring a real decimal time is
+#: also what discards the annotators' own queries, which are written against
+#: a `000000000` pseudo-time and contain no speech.
+TRN_RE = re.compile(r"^(\d+\.\d+)\s+(\d+\.\d+)\t(.*)$")
+
+#: A speaker label at the start of what follows the times. In some files the
+#: label is its own tab-separated column and in others it is space-padded
+#: within one, so this matches the label rather than the layout.
+#:
+#: Crucially, the column is **blank when the same speaker continues** into
+#: the next intonation unit. That is the single most valuable thing this
+#: corpus records for us: it is the within-turn structure that makes the
+#: turn-final versus mid-turn contrast measurable at all.
+TRN_SPEAKER_RE = re.compile(r"^\s*([A-Za-z#>*][A-Za-z0-9_/?>*]{0,11})\s*:\s")
+
+#: Labels that are not a person taking a turn.
+#:
+#: `>ENV`, `>DOG` and `>RADIO` are environmental sound -- a dog barking is
+#: not a turn. `X` is an unidentified voice, and two consecutive `X` lines
+#: may be two different people, so counting a speaker change between them
+#: would invent a turn boundary that nobody can verify.
+NON_SPEAKER_RE = re.compile(r"^(>.*|ENV|\*?X(_\d+)?)$")
+
+#: Everything SBCSAE marks that is not a word. Without this the tokeniser
+#: produces nonsense that ranks high enough to crowd out the real
+#: candidates: `(H)` becomes the word `h`, `XX` becomes `xx`, and the
+#: overlap index in `[2 ... 2]` becomes the word `2`.
+SBC_COMMENT = re.compile(r"\(\([^)]*\)\)")              # ((AIR_CONDITIONER))
+SBC_VOCAL = re.compile(r"\([A-Za-z_]+\)")               # (H) (Hx) (TSK)
+SBC_ANGLE = re.compile(r"<[A-Z_0-9]+\b|\b[A-Z_0-9]+>")  # <READ ... READ>
+SBC_UNCLEAR = re.compile(r"\bX+\b", re.IGNORECASE)      # XX, XXXX: unintelligible
+
+#: Overlap brackets, with the index that pairs them: `[2 ... 2]`.
+#:
+#: These are **deleted, not spaced**, and the reason is the whole trick of
+#: reading this corpus. SBCSAE puts a bracket at the instant overlap starts,
+#: which is very often in the middle of a word -- `righ[t]`, `Deli[2ciou2]s`,
+#: `every2]thing`. Replacing a bracket with a space shatters those into
+#: `righ` + `t` and `deli` + `ciou` + `s`, and the fragments are frequent
+#: enough to reach the top of a candidate list.
+#:
+#: The digit is only dropped when a single one sits against the bracket, so
+#: that a spoken number keeps its digits: `[50` is fifty, not overlap 5.
+SBC_OVERLAP = re.compile(r"\[\d(?!\d)|\[|(?<!\d)\d\]|\]")
+
+#: Deleted rather than replaced by a space, because these sit *inside* a
+#: word: `=` is lengthening, `%` a glottal stop, `~` an anonymised name, `^`
+#: an accent. Substituting a space would cut `ti=me` into `ti` and `me`.
+SBC_INTRAWORD = re.compile(r"[=%~!^&]")
+
+#: Replaced by a space, because these separate words. `@` is laughter.
+SBC_SEPARATOR = re.compile(r"[@+…—]")
+
+
+def is_speaker(label: str) -> bool:
+    """Is this label a person whose turn we can count?"""
+    return NON_SPEAKER_RE.match(label.strip().rstrip("?").upper()) is None
+
+
+def clean_sbcsae(text: str) -> str:
+    """Strip SBCSAE's transcription conventions, leaving spoken words."""
+    text = SBC_COMMENT.sub(" ", text)
+    text = SBC_ANGLE.sub(" ", text)
+    text = SBC_VOCAL.sub(" ", text)
+    text = SBC_OVERLAP.sub("", text)
+    text = SBC_INTRAWORD.sub("", text)
+    text = SBC_SEPARATOR.sub(" ", text)
+    return SBC_UNCLEAR.sub(" ", text)
+
+
+def tokenise_sbcsae(text: str) -> list[str]:
+    """Like `tokenise`, but drops words the speaker cut off.
+
+    A trailing hyphen marks a word abandoned mid-production (`y-`, `the-`).
+    Those are not lexical items, and keeping them would put fragments near
+    the top of a list meant for a human to read.
+
+    The hyphen is not always last: a cut-off word still takes the comma or
+    full stop that closes its intonation unit, so `s-,` and `the-.` have to
+    be recognised too.
+    """
+    out: list[str] = []
+    for chunk in text.lower().split():
+        if chunk.rstrip(".,?!;:\"')").endswith("-"):
+            continue
+        out.extend(TOKEN_RE.findall(chunk))
+    return out
+
+
+def parse_sbcsae(path: str) -> list[Utterance]:
+    """One intonation unit per line, from the Santa Barbara Corpus.
+
+    Unlike the plain transcripts this tool also reads, SBCSAE segments each
+    turn into intonation units and names the speaker only when it changes.
+    That is what makes the cross-turn measure usable here rather than
+    degenerate: across the 60 conversations, 39,945 units continue the
+    current speaker against 28,748 that hand over, so "ends a turn" and
+    "keeps the floor" are both well attested.
+    """
+    out: list[Utterance] = []
+    speaker: str | None = None
+    for line in read_text(path).splitlines():
+        match = TRN_RE.match(line)
+        if match is None:
+            continue
+        # Normalise the one- and two-tab layouts to the same thing before
+        # looking for a label.
+        rest = match.group(3).replace("\t", " ")
+        label = TRN_SPEAKER_RE.match(rest)
+        if label is not None:
+            speaker = label.group(1)
+            rest = rest[label.end():]
+        if speaker is None or not is_speaker(speaker):
+            # A blank column inherits the line above, so dropping a
+            # non-speaker also drops the lines that continue it.
+            continue
+        words = tokenise_sbcsae(clean_sbcsae(rest))
+        if words:
+            out.append(Utterance(speaker.rstrip("?").upper(), words, []))
+    return out
 
 
 def parse_any(path: str) -> list[Utterance]:
-    if path.lower().endswith(".conllu"):
+    lower = path.lower()
+    if lower.endswith(".conllu"):
         return parse_conllu(path)
+    if lower.endswith(".trn"):
+        return parse_sbcsae(path)
     return parse_transcript(path)
 
 
@@ -185,7 +343,7 @@ def expand(paths: list[str]) -> list[str]:
     found: list[str] = []
     for p in paths:
         if os.path.isdir(p):
-            for ext in ("*.conllu", "*.txt"):
+            for ext in ("*.conllu", "*.txt", "*.trn"):
                 found.extend(sorted(glob.glob(os.path.join(p, "**", ext), recursive=True)))
         else:
             found.extend(sorted(glob.glob(p)))
@@ -194,7 +352,9 @@ def expand(paths: list[str]) -> list[str]:
     unique: list[str] = []
     for f in found:
         name = os.path.basename(f)
-        if name in seen:
+        # AppleDouble sidecars. The SBCSAE zip carries one per transcript,
+        # and they parse as empty files rather than failing loudly.
+        if name.startswith("._") or name in seen:
             continue
         seen.add(name)
         unique.append(f)
