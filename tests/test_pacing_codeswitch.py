@@ -158,6 +158,45 @@ def test_short_or_empty_input_is_never_a_switch(detector, text: str) -> None:
     assert not detector.detect(text).switched
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Yeah. We can do 8AM.",
+        "Yeah. Okay. My name is.",
+        "okay so i told him",
+        "right well i suppose so",
+        "yes that is the one",
+    ],
+)
+def test_a_one_word_head_is_not_evidence_of_anything(detector, text: str) -> None:
+    """Found on a live call, firing on plain English several times a minute.
+
+    These are five or six tokens, so a four-token tail leaves a head of one
+    word -- and that word is `yeah`, `okay`, `right` or `yes`, every one of
+    which is in the English profile. Head density is then exactly 1.0 and
+    tail density exactly 0.0, so the shift is -1.0 and clears any threshold
+    no matter what was said. The detector reported a switch *out of
+    English* in the middle of an English sentence, and the guard spent
+    patience on it every time.
+
+    One word cannot estimate a proportion.
+    """
+    result = detector.detect(text)
+    assert not result.switched, f"false positive: {result.description}"
+
+
+def test_a_real_switch_still_fires_with_a_long_enough_head(detector) -> None:
+    """The floor must not be raised so far that nothing is ever detected.
+    These are the same utterances the feature exists for."""
+    assert detector.detect("i was going to say that wetin dey happen abeg").switched
+    # The switch has to be in the tail, which is the window being measured.
+    # Pidgin words scattered mid-sentence with an English ending is not a
+    # switch into Pidgin, and the detector is right to stay quiet.
+    assert detector.detect(
+        "i was telling him about it but wetin una dey sabi"
+    ).switched
+
+
 def test_one_profile_is_enough_to_detect_a_switch() -> None:
     """A consequence of measuring density shift rather than identifying both
     halves: you only need a profile for the *marked* language.
