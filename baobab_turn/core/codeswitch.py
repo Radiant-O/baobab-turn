@@ -33,6 +33,22 @@ __all__ = ["CodeSwitchDetector", "CodeSwitchResult", "LanguageProfile"]
 #: any "switch" is an artefact of having almost no text.
 _MIN_TOKENS = 4
 
+#: The head needs enough words to give a density worth comparing.
+#:
+#: This was missing and it produced a steady false positive on ordinary
+#: English. "Yeah. We can do 8AM." is five tokens, so with a four-token
+#: tail the head is the single word `yeah` -- which is in the English
+#: profile, making head density exactly 1.0 and tail density exactly 0.0.
+#: A shift of -1.0 clears any threshold, and the detector confidently
+#: reported a switch *out of English* in the middle of an English sentence.
+#:
+#: One word cannot estimate a proportion. Three is still thin, but it is
+#: the point where a single profile word stops being the whole measurement.
+#: Below it the honest answer is that there is not enough text to say, and
+#: abstaining is cheap here: a detected switch buys a couple of hundred
+#: milliseconds, so a false positive costs more than a miss.
+_MIN_HEAD_TOKENS = 3
+
 
 @dataclass(frozen=True, slots=True)
 class CodeSwitchResult:
@@ -139,7 +155,11 @@ class CodeSwitchDetector:
 
         tail_tokens = tokens[-self.window:]
         head_tokens = tokens[: -self.window] or tokens[: len(tokens) // 2]
-        if not head_tokens or not tail_tokens:
+        if len(head_tokens) < _MIN_HEAD_TOKENS or not tail_tokens:
+            # Not enough before the tail to say anything about it. See
+            # `_MIN_HEAD_TOKENS`: a one-word head makes every density 0 or
+            # 1, and the shift between them is then guaranteed to look
+            # decisive whatever the words actually were.
             return CodeSwitchResult(False)
 
         best_shift = 0.0
